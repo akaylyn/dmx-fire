@@ -40,6 +40,7 @@ void setup() {
   FastLED.show();
 
   dmxSetup();
+  towerSetup();
   webSetup();
 }
 
@@ -55,42 +56,40 @@ void loop() {
 
   dmxKeepalive();
 
-  // Apply idle config changes from the web UI when the button isn't held
-  if (idleUpdated && !keyButton.isPressed()) {
-    currPal     = idlePal;
-    currBright  = idleBright;
-    idleUpdated = false;
-  }
-
   if (keyButton.wasPressed()) {
     Serial.println("External Pressed");
     ATOM_LED[0] = CRGB::White;
-    currPal    = electricBlueFirePal;
-    currBright = 255;
   }
 
   if (keyButton.wasReleased()) {
     Serial.println("External Released");
-    currPal    = idlePal;    // restore web-configured idle
-    currBright = idleBright;
   }
 
   // DMX output — 50 Hz
   EVERY_N_MILLISECONDS(20) {
     static uint8_t currIndex = 0;
-    CRGB c = ColorFromPalette(currPal, currIndex++, currBright, LINEARBLEND);
+    static CRGBPalette256 buttonPal = electricBlueFirePal;
+    bool held = keyButton.isPressed();
 
-    TowerState state;
-    state.r         = c.r;
-    state.g         = c.g;
-    state.b         = c.b;
-    state.masterDim = 255;
-    state.wDim      = currBright;
-    // Use hardware strobe on fixtures when button is held
-    state.rgbStrobe = keyButton.isPressed() ? 128 : 0;
-    state.wStrobe   = keyButton.isPressed() ? 128 : 0;
+    for (uint8_t i = 0; i < NUM_TOWERS; i++) {
+      CRGBPalette256& pal    = held ? buttonPal              : towerConfigs[i].pal;
+      uint8_t         bright = held ? (uint8_t)255           : towerConfigs[i].bright;
 
-    towersWrite(state);
+      CRGB c = ColorFromPalette(pal, currIndex, bright, LINEARBLEND);
+
+      TowerState state;
+      state.r         = c.r;
+      state.g         = c.g;
+      state.b         = c.b;
+      state.masterDim = 255;
+      state.wDim      = bright;
+      state.rgbStrobe = held ? 128 : 0;
+      state.wStrobe   = held ? 128 : 0;
+
+      towerWrite(i, state);
+    }
+    currIndex++;
+    dmxDevice.update();
   }
 
   // Onboard LED cycles through the HSV colorwheel when idle

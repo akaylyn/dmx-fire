@@ -25,11 +25,8 @@ DEFINE_GRADIENT_PALETTE(electricBlueFirePal){
   255, 255, 255, 255    // white (hottest tips)
 };
 
-CRGBPalette256 idlePal    = electricGreenFirePal;
-byte           idleBright  = 16;
-String         idlePalName = "green";
-
-CRGBPalette256 currPal    = electricGreenFirePal;
-byte           currBright  = 16;
-
-bool idleUpdated = false;
+CRGBPalette256 palFromName(const String& name) {
+  if (name == "blue") return electricBlueFirePal;
+  if (name == "fire") return firepal;
+  return electricGreenFirePal;  // default: "green"
+}

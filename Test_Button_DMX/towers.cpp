@@ -1,6 +1,19 @@
 #include <Arduino.h>
 #include "dmx.h"
+#include "palettes.h"
 #include "towers.h"
+
+TowerConfig towerConfigs[NUM_TOWERS];
+bool        towerConfigUpdated = false;
+
+void towerSetup() {
+  for (uint8_t i = 0; i < NUM_TOWERS; i++) {
+    towerConfigs[i].connected = true;
+    towerConfigs[i].palName   = "green";
+    towerConfigs[i].pal       = electricGreenFirePal;
+    towerConfigs[i].bright    = 16;
+  }
+}
 
 // Each tower occupies 15 DMX channels: 4 (decoder) + 11 (strobe).
 static const uint8_t CHANNELS_PER_TOWER = 15;

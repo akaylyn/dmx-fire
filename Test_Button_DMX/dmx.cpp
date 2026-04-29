@@ -29,11 +29,3 @@ void dmxKeepalive() {
   }
 }
 
-void dmxSendColor(uint8_t r, uint8_t g, uint8_t b, uint8_t white) {
-  // NOTE: DMX addresses start at 1, not 0. Writing to 0 crashes the DMX system.
-  dmxDevice.writeByte(r,     1);
-  dmxDevice.writeByte(g,     2);
-  dmxDevice.writeByte(b,     3);
-  dmxDevice.writeByte(white, 4);
-  dmxDevice.update();
-}

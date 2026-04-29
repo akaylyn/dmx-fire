@@ -11,6 +11,7 @@
 #include <FastLED.h>
 #include "palettes.h"
 #include "dmx.h"
+#include "towers.h"
 #include "web.h"
 
 #define KEY_INPUT_PIN 39  // simple switch
@@ -79,17 +80,17 @@ void loop() {
     static uint8_t currIndex = 0;
     CRGB c = ColorFromPalette(currPal, currIndex++, currBright, LINEARBLEND);
 
-    // White channel strobes while button is held
-    static byte whiteLevel = 0;
-    if (keyButton.isPressed()) {
-      EVERY_N_MILLISECONDS(100) {
-        whiteLevel = (whiteLevel == 0) ? 255 : 0;
-      }
-    } else {
-      whiteLevel = 0;
-    }
+    TowerState state;
+    state.r         = c.r;
+    state.g         = c.g;
+    state.b         = c.b;
+    state.masterDim = 255;
+    state.wDim      = currBright;
+    // Use hardware strobe on fixtures when button is held
+    state.rgbStrobe = keyButton.isPressed() ? 128 : 0;
+    state.wStrobe   = keyButton.isPressed() ? 128 : 0;
 
-    dmxSendColor(c.r, c.g, c.b, whiteLevel);
+    towersWrite(state);
   }
 
   // Onboard LED cycles through the HSV colorwheel when idle

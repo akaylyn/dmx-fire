@@ -16,6 +16,8 @@
 #include "button_fsm.h"
 #include "storage.h"
 #include "web.h"
+#include "log.h"
+#include "tests.h"
 
 #define KEY_INPUT_PIN 39  // simple switch
 m5::Button_Class keyButton;
@@ -47,6 +49,8 @@ void setup() {
   buttonFsmSetup();
   storageLoad();  // overwrite defaults with persisted config before web UI starts
   webSetup();
+
+  runDiagnostics();  // prints pass/fail report to serial; also runs a 500 ms DMX visual test
 }
 
 void loop() {
@@ -59,7 +63,11 @@ void loop() {
 
   dmxKeepalive();
 
-  buttonFsmTick(keyButton.wasPressed(), keyButton.wasReleased(), keyButton.isPressed());
+  bool btnPressed  = keyButton.wasPressed();
+  bool btnReleased = keyButton.wasReleased();
+  if (btnPressed)  LOG_I("[BTN] External pressed");
+  if (btnReleased) LOG_I("[BTN] External released");
+  buttonFsmTick(btnPressed, btnReleased, keyButton.isPressed());
 
   // DMX output — 50 Hz
   EVERY_N_MILLISECONDS(20) {
@@ -119,6 +127,14 @@ void loop() {
     }
   }
 
-  if (M5.BtnA.wasPressed())  Serial.println("Atom Pressed");
-  if (M5.BtnA.wasReleased()) Serial.println("Atom Released");
+  if (M5.BtnA.wasPressed()) {
+    LOG_I("[BTN] Atom pressed — running diagnostics");
+    runDiagnostics();
+  }
+
+  // Heartbeat — current state every 5 s so the log is never silent
+  EVERY_N_MILLISECONDS(5000) {
+    const char* states[] = {"IDLE", "FIRE_ACTIVE", "END_CUE", "COOLDOWN"};
+    LOG_I("[STATUS] fsm=%-11s  uptime=%lu s", states[fsmState], millis() / 1000);
+  }
 }

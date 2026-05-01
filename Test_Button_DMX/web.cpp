@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
+#include "log.h"
 #include "palettes.h"
 #include "towers.h"
 #include "confluence.h"
@@ -13,6 +15,7 @@ static const char* AP_SSID = WIFI_SSID;
 static const char* AP_PASS = WIFI_PASS;
 
 static WebServer server(80);
+static DNSServer  dns;
 
 // --- HTML helpers ---
 
@@ -160,11 +163,20 @@ static String buildPage() {
 // --- Handlers ---
 
 static void handleRoot() {
+  LOG_I("[WEB] GET /  client=%s", server.client().remoteIP().toString().c_str());
   server.send(200, "text/html", buildPage());
 }
 
 static void handleSet() {
   String target = server.arg("target");
+  // Build a compact args string for the log line
+  String args;
+  for (int i = 0; i < server.args(); i++) {
+    if (server.argName(i) == "target") continue;
+    if (args.length()) args += ' ';
+    args += server.argName(i) + '=' + server.arg(i);
+  }
+  LOG_I("[WEB] POST /set  target=%s  %s", target.c_str(), args.c_str());
 
   if (target == "confluence") {
     confluenceConfig.connected = server.hasArg("connected");
@@ -205,13 +217,32 @@ static void handleSet() {
 }
 
 void webSetup() {
-  WiFi.softAP(AP_SSID, AP_PASS);
-  Serial.printf("AP: %s  IP: %s\n", AP_SSID, WiFi.softAPIP().toString().c_str());
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_AP);
+  bool ok = WiFi.softAP(AP_SSID, AP_PASS);
+  LOG_I("AP %s: SSID=%s  IP=%s", ok ? "UP" : "FAILED", AP_SSID, WiFi.softAPIP().toString().c_str());
+
+  // Log whenever a client connects or disconnects
+  WiFi.onEvent([](WiFiEvent_t e, WiFiEventInfo_t info) {
+    LOG_I("[WIFI] client connected    — total=%d", WiFi.softAPgetStationNum());
+  }, ARDUINO_EVENT_WIFI_AP_STACONNECTED);
+  WiFi.onEvent([](WiFiEvent_t e, WiFiEventInfo_t info) {
+    LOG_I("[WIFI] client disconnected — total=%d", WiFi.softAPgetStationNum());
+  }, ARDUINO_EVENT_WIFI_AP_STADISCONNECTED);
+
+  // Captive portal: redirect all DNS queries to this device so iOS/Android
+  // open the config page automatically instead of blocking non-internet networks.
+  dns.start(53, "*", WiFi.softAPIP());
+
   server.on("/",    HTTP_GET,  handleRoot);
   server.on("/set", HTTP_POST, handleSet);
+  // Catch all captive portal probe URLs and redirect to the config page
+  server.onNotFound([]() { server.sendHeader("Location", "http://192.168.4.1/"); server.send(302); });
   server.begin();
+  LOG_I("HTTP server + captive portal DNS started");
 }
 
 void webTick() {
+  dns.processNextRequest();
   server.handleClient();
 }

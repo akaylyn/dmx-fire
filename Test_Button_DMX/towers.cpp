@@ -8,20 +8,22 @@ bool        towerConfigUpdated = false;
 
 void towerSetup() {
   for (uint8_t i = 0; i < NUM_TOWERS; i++) {
-    towerConfigs[i].connected = true;
-    towerConfigs[i].palName   = "green";
-    towerConfigs[i].pal       = electricGreenFirePal;
-    towerConfigs[i].bright    = 16;
+    towerConfigs[i].connected   = true;
+    towerConfigs[i].palName     = "green";
+    towerConfigs[i].pal         = electricGreenFirePal;
+    towerConfigs[i].bright      = 16;
+    towerConfigs[i].flameLevel  = 0;
   }
 }
 
 // Each tower occupies 15 DMX channels: 4 (decoder) + 11 (strobe).
 static const uint8_t CHANNELS_PER_TOWER = 15;
 
-// Write state to one tower. base = towerIndex * CHANNELS_PER_TOWER.
+// Write state to one tower.
+// Universe layout: ch 1–4 = Confluence, ch 5+ = towers.
 // NOTE: DMX addresses are 1-indexed. Writing to address 0 crashes the bus.
 void towerWrite(uint8_t index, const TowerState& state) {
-  const uint16_t base = index * CHANNELS_PER_TOWER;
+  const uint16_t base = 4 + index * CHANNELS_PER_TOWER;
 
   // --- 4-channel RGBW decoder ---
   dmxDevice.writeByte(state.r,    base + 1);  // CH1: Red

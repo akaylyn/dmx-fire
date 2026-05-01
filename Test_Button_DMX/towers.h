@@ -15,10 +15,11 @@ struct TowerState {
 
 // Web-configurable idle state for one tower.
 struct TowerConfig {
-  bool            connected;  // physically present (tracked in web UI)
-  String          palName;    // "green", "blue", "fire" — for web UI rendering
-  CRGBPalette256  pal;        // active idle palette
-  uint8_t         bright;     // idle brightness 0–255
+  bool            connected;   // physically present (tracked in web UI)
+  String          palName;     // "green", "blue", "fire" — for web UI rendering
+  CRGBPalette256  pal;         // active idle palette
+  uint8_t         bright;      // idle brightness 0–255
+  uint8_t         flameLevel;  // 0=off, 255=full open; written to decoder CH4 (W) during fire
 };
 
 extern TowerConfig towerConfigs[NUM_TOWERS];

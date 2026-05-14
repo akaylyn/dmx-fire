@@ -8,6 +8,15 @@ static const uint16_t NUM_CHANNELS = 64;
 
 SparkFunDMX dmxDevice;
 uint16_t    dmxSerialBufferSize = 0;
+uint8_t     dmxLastFrame[DMX_SHADOW_SIZE] = {0};
+
+void dmxShadowWrite(uint8_t value, uint16_t ch) {
+  // DMX is 1-indexed. Ch 0 is invalid and would crash the bus.
+  if (ch >= 1 && ch <= DMX_SHADOW_SIZE) {
+    dmxLastFrame[ch - 1] = value;
+  }
+  dmxDevice.writeByte(value, ch);
+}
 
 void dmxSetup() {
   Serial1.begin(DMX_BAUD, DMX_FORMAT, RX_PIN, TX_PIN);

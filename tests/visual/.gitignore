@@ -1,0 +1,3 @@
+# Per-run outputs are tracked deliberately so reviewers can scrub through
+# captures. Add patterns here if you want to drop large/old runs from git.
+.*_raw.jpg

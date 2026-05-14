@@ -1,107 +1,79 @@
 # 9PCS 4IN1 LED Washer Wall Light
 
-> **Note:** A specific online manual for this product was not found. This file contains generic LED wall washer documentation for DMX512 RGBW fixtures. Supplement or replace with the physical manual or a photo of the unit.
+Source: physical manual photo (`IMG_1374.heic`)
 
 ---
 
 ## Overview
 
-A multi-LED RGBW wall washer fixture containing 9 RGBW (4-in-1) LED emitters. DMX512 control allows individual colour mixing, dimming, and strobe via a DMX controller.
+A multi-LED RGBW wall washer fixture containing 9 RGBW (4-in-1) LED emitters. Supports DMX512, stand-alone, and sound-control modes. Address and channel count are set via the front panel menu.
 
 ---
 
-## Typical specifications
+## Controls
 
-| Parameter | Value |
-|-----------|-------|
-| LEDs | 9 × RGBW 4-in-1 emitters |
-| Colour mixing | Red + Green + Blue + White |
-| Control | DMX512, stand-alone, master/slave |
-| DMX channels | 4 or 8 (check unit label) |
-| Beam angle | Typically 20–30° per emitter |
-| Connector | 3-pin or 5-pin XLR |
-| Power | AC 100–240V |
+| Button | Function |
+|--------|----------|
+| MENU | Enter / cycle menu |
+| UP | Increment value |
+| DOWN | Decrement value |
+| ENTER | Confirm / save |
 
 ---
 
 ## DMX channel mapping
 
-### 4-channel mode (RGBW)
+### 4-channel mode — set address with `d001`
 
 | CH | Function | Range |
 |----|----------|-------|
-| 1 | Red | 0–255 |
-| 2 | Green | 0–255 |
-| 3 | Blue | 0–255 |
-| 4 | White | 0–255 |
+| 1 | Red | 0–255 (dark to bright) |
+| 2 | Green | 0–255 (dark to bright) |
+| 3 | Blue | 0–255 (dark to bright) |
+| 4 | White | 0–255 (dark to bright) |
 
-### 8-channel mode (common)
+### 8-channel mode — set address with `A001`
 
-| CH | Function | Range |
-|----|----------|-------|
-| 1 | Dimmer (master) | 0–255 |
+| CH | Function | Range / Notes |
+|----|----------|---------------|
+| 1 | Total Dimmer | 0–255, RGBW master (dark to bright) |
 | 2 | Red | 0–255 |
 | 3 | Green | 0–255 |
 | 4 | Blue | 0–255 |
 | 5 | White | 0–255 |
-| 6 | Strobe | 0 = off, 1–255 = slow→fast |
-| 7 | Program | Built-in effects |
-| 8 | Program speed | 0–255 |
+| 6 | Total Strobe | 005–255 (slow to fast); 0 = off |
+| 7 | Function Choice | 0–50: direct CH1–6 control; 51–100: color select (via CH8); 101–150: color jump; 151–200: color gradate; 201–250: color pulse; 251–255: sound control |
+| 8 | Function Speed | Speed / color output when CH7 ≥ 51 |
 
-> Verify channel count with the physical unit — the dipswitch or menu sets the mode.
-
----
-
-## Address setting (dipswitch, common method)
-
-DMX address is set in binary using 9 or 10 DIP switches (depending on model).
-
-| Switch | Binary value |
-|--------|-------------|
-| SW1 | 1 |
-| SW2 | 2 |
-| SW3 | 4 |
-| SW4 | 8 |
-| SW5 | 16 |
-| SW6 | 32 |
-| SW7 | 64 |
-| SW8 | 128 |
-| SW9 | 256 |
-
-Add the values of all **ON** switches to get the DMX start address.
-
-Example: SW1 ON + SW3 ON = 1 + 4 = address **5**
+> **This project uses 4-channel mode (`d001`).** In 8-channel mode (`A001`) CH1 is a master dimmer — sending 0 on CH1 blacks out the fixture regardless of other channels.
 
 ---
 
-## Daisy-chaining multiple fixtures
+## Address / menu settings
 
-```
-Controller ──► Fixture 1 (addr 1)  ──►  Fixture 2 (addr 5)  ──►  120Ω terminator
-                  XLR Thru              XLR Thru
-```
-
-Space addresses by the number of channels each fixture uses.  
-Example (4-channel mode): fixture 1 = addr 1, fixture 2 = addr 5, fixture 3 = addr 9…
+| Display | Range | Description |
+|---------|-------|-------------|
+| `A001` | 001–512 | DMX address — **8-channel mode** |
+| `d001` | 001–512 | DMX address — **4-channel mode** |
+| `o255` | 000–255 | Remote control: built-in 1–9 mixed color |
+| `r255` | 000–255 | Manual R dimming |
+| `G255` | 000–255 | Manual G dimming |
+| `b255` | 000–255 | Manual B dimming |
+| `u255` | 010–255 | Manual W dimming |
+| `FH99` | 00–99 | Strobe speed (slow to fast) |
+| `CL01` | 01–08 | 8 color presets |
+| `CC99` | 00–99 | Color jump speed |
+| `DE99` | 00–99 | Color gradate speed |
+| `CP99` | 00–99 | Color pulse speed |
+| `soUd` | — | Sound control mode |
+| `rFye` | ye/no | Infrared remote control on/off |
 
 ---
 
-## Wiring
+## Wiring (XLR-3)
 
-### DMX (3-pin XLR)
-```
-Pin 1  GND / Shield
-Pin 2  Data − (cold)
-Pin 3  Data + (hot)
-```
-
-### DMX (5-pin XLR)
-```
-Pin 1  GND / Shield
-Pin 2  Data − (cold)
-Pin 3  Data + (hot)
-Pin 4  (secondary data −, not used in standard DMX512)
-Pin 5  (secondary data +, not used in standard DMX512)
-```
-
-Adapt 5-pin to 3-pin: connect pins 1→1, 2→2, 3→3; leave 4 and 5 disconnected.
+| Pin | Signal |
+|-----|--------|
+| 1 | GND / Shield |
+| 2 | Data − (cold) |
+| 3 | Data + (hot) |

@@ -17,10 +17,10 @@ void storageLoad() {
     towerConfigs[i].connected = prefs.getBool(key, true);
 
     snprintf(key, sizeof(key), "t%db", i);
-    towerConfigs[i].bright = prefs.getUChar(key, 16);
+    towerConfigs[i].bright = prefs.getUChar(key, 128);
 
     snprintf(key, sizeof(key), "t%df", i);
-    towerConfigs[i].flameLevel = prefs.getUChar(key, 0);
+    towerConfigs[i].flameLevel = prefs.getUChar(key, 255);
 
     // palName must be fetched into a String; pal is derived from it
     snprintf(key, sizeof(key), "t%dp", i);
@@ -31,10 +31,11 @@ void storageLoad() {
   confluenceConfig.connected = prefs.getBool("cfcon", true);
   confluenceConfig.fireLevel = prefs.getUChar("cffl",  255);
 
-  buttonConfig.mode           = prefs.getUChar("btnmode",  0);
-  buttonConfig.fireDurationMs = prefs.getUShort("btnfire", 3000);
-  buttonConfig.cooldownMs     = prefs.getUShort("btncool", 10000);
-  buttonConfig.endCuePattern  = prefs.getUChar("btncue",   0);
+  buttonConfig.mode              = prefs.getUChar("btnmode",    0);
+  buttonConfig.fireDurationMs    = prefs.getUShort("btnfire",   3000);
+  buttonConfig.cooldownMs        = prefs.getUShort("btncool",   10000);
+  buttonConfig.endCuePattern     = prefs.getUChar("btncue",     0);
+  buttonConfig.machineGunBurstMs = prefs.getUShort("btnmgburst", 200);
 
   prefs.end();
 }
@@ -61,10 +62,11 @@ void storageSave() {
   prefs.putBool("cfcon",    confluenceConfig.connected);
   prefs.putUChar("cffl",    confluenceConfig.fireLevel);
 
-  prefs.putUChar("btnmode",  buttonConfig.mode);
-  prefs.putUShort("btnfire", buttonConfig.fireDurationMs);
-  prefs.putUShort("btncool", buttonConfig.cooldownMs);
-  prefs.putUChar("btncue",   buttonConfig.endCuePattern);
+  prefs.putUChar("btnmode",     buttonConfig.mode);
+  prefs.putUShort("btnfire",    buttonConfig.fireDurationMs);
+  prefs.putUShort("btncool",    buttonConfig.cooldownMs);
+  prefs.putUChar("btncue",      buttonConfig.endCuePattern);
+  prefs.putUShort("btnmgburst", buttonConfig.machineGunBurstMs);
 
   prefs.end();
 }

@@ -17,6 +17,7 @@
 #include "storage.h"
 #include "web.h"
 #include "log.h"
+#include "morse.h"
 #include "tests.h"
 
 #define KEY_INPUT_PIN 39  // simple switch
@@ -63,16 +64,17 @@ void loop() {
 
   dmxKeepalive();
 
-  bool btnPressed  = keyButton.wasPressed();
-  bool btnReleased = keyButton.wasReleased();
-  if (btnPressed)  LOG_I("[BTN] External pressed");
-  if (btnReleased) LOG_I("[BTN] External released");
-  buttonFsmTick(btnPressed, btnReleased, keyButton.isPressed());
+  // OR physical events with API-injected events so the FSM is single-sourced.
+  bool btnPressed  = keyButton.wasPressed()  || buttonConsumePress();
+  bool btnReleased = keyButton.wasReleased() || buttonConsumeRelease();
+  bool btnHeld     = keyButton.isPressed()   || buttonVirtualHeld();
+  if (btnPressed)  LOG_I("[BTN] pressed");
+  if (btnReleased) LOG_I("[BTN] released");
+  buttonFsmTick(btnPressed, btnReleased, btnHeld);
 
   // DMX output — 50 Hz
   EVERY_N_MILLISECONDS(20) {
-    static uint8_t         paletteIndex = 0;
-    static CRGBPalette256  firePal      = firepal;
+    static uint8_t paletteIndex = 0;
 
     for (uint8_t i = 0; i < NUM_TOWERS; i++) {
       if (!towerConfigs[i].connected) continue;
@@ -82,12 +84,8 @@ void loop() {
 
       switch (fsmState) {
         case FSM_FIRE_ACTIVE: {
-          CRGB c = ColorFromPalette(firePal, paletteIndex, 255, LINEARBLEND);
-          state.r         = c.r;
-          state.g         = c.g;
-          state.b         = c.b;
-          state.wDim      = towerConfigs[i].flameLevel;
-          state.rgbStrobe = 64;
+          // White only: channel 4 (W) at full flameLevel, RGB off.
+          state.wDim = towerConfigs[i].flameLevel;  // 255 by default; user-adjustable per tower
           break;
         }
         case FSM_END_CUE: {
@@ -96,11 +94,19 @@ void loop() {
           break;
         }
         default: {
-          CRGB c = ColorFromPalette(towerConfigs[i].pal, paletteIndex, towerConfigs[i].bright, LINEARBLEND);
-          state.r    = c.r;
-          state.g    = c.g;
-          state.b    = c.b;
-          state.wDim = towerConfigs[i].bright;
+          // IDLE / COOLDOWN: blank with an occasional palette-coloured flash.
+          // 4-second cycle, 800 ms ON, rest OFF.
+          uint32_t cyclePos = millis() % 4000;
+          if (cyclePos < 800) {
+            CRGB c = ColorFromPalette(towerConfigs[i].pal, paletteIndex, towerConfigs[i].bright, LINEARBLEND);
+            state.r    = c.r;
+            state.g    = c.g;
+            state.b    = c.b;
+            state.wDim = towerConfigs[i].bright;
+          } else {
+            state.r = state.g = state.b = 0;
+            state.wDim = 0;
+          }
           break;
         }
       }
@@ -109,10 +115,33 @@ void loop() {
     }
 
     if (confluenceConfig.connected) {
-      confluenceWrite(fsmState == FSM_FIRE_ACTIVE ? confluenceConfig.fireLevel : 0);
+      uint8_t cfLevel = 0;
+      if (morseActive()) {
+        cfLevel = morseTick();
+      } else if (fsmState == FSM_FIRE_ACTIVE) {
+        if (buttonConfig.mode == 2) {
+          // Machine gun: pulse solenoid — on for machineGunBurstMs, off for 50 ms
+          uint32_t period = (uint32_t)buttonConfig.machineGunBurstMs + 50;
+          cfLevel = (millis() % period < (uint32_t)buttonConfig.machineGunBurstMs)
+                    ? confluenceConfig.fireLevel : 0;
+        } else {
+          cfLevel = confluenceConfig.fireLevel;
+        }
+      }
+      confluenceWrite(cfLevel);
     }
 
     paletteIndex++;
+
+    // Log DMX frame on state transitions so we can verify channel values on the wire.
+    static FsmState lastDmxLogState = FSM_IDLE;
+    if (fsmState != lastDmxLogState) {
+      lastDmxLogState = fsmState;
+      LOG_I("[DMX] state=%s CH1(R)=%d CH2(G)=%d CH3(B)=%d CH4(W)=%d CH5(dim)=%d",
+            fsmStateName(fsmState),
+            dmxLastFrame[0], dmxLastFrame[1], dmxLastFrame[2], dmxLastFrame[3], dmxLastFrame[4]);
+    }
+
     dmxDevice.update();
   }
 

@@ -65,8 +65,59 @@ wait_for_port() {
   find_port
 }
 
-cleanup() { rm -f "$LOCKFILE"; }
+RECOVERY_SERVER_PID=""
+cleanup() {
+  rm -f "$LOCKFILE"
+  [ -n "$RECOVERY_SERVER_PID" ] && kill "$RECOVERY_SERVER_PID" 2>/dev/null || true
+}
 trap cleanup EXIT
+
+# Triggered when do_flash exhausts retries. Prints the four .bin paths the
+# user must drop into the browser tool, then opens the hosted esptool-js if
+# the internet is reachable, otherwise serves the local copy under
+# tools/recovery/ via python3 -m http.server.
+recovery_failover() {
+  echo
+  red "============================================================"
+  red "  *** CLI flash failed -- launching recovery tool ***"
+  red "============================================================"
+  echo
+  yellow "Firmware files to load (offset  path):"
+  echo "  0x00000  $BIN_BOOT"
+  echo "  0x08000  $BIN_PART"
+  echo "  0x0e000  $BOOT_APP0"
+  echo "  0x10000  $BIN_APP"
+  echo
+  yellow "Manual recovery steps:"
+  echo "  1. Hold the side button on the M5AtomS3."
+  echo "  2. Unplug + replug USB while holding."
+  echo "  3. Release the button (device is now in ROM download mode)."
+  echo "  4. In the browser tool: Connect -> pick port -> load files -> Program."
+  echo
+
+  local hosted="https://espressif.github.io/esptool-js/"
+  if curl -fsSL -m 3 -o /dev/null "$hosted" 2>/dev/null; then
+    green "==> internet reachable - opening hosted recovery tool"
+    echo "    $hosted"
+    open "$hosted"
+  else
+    local recovery_dir="$REPO/tools/recovery"
+    if [ ! -f "$recovery_dir/index.html" ]; then
+      red "ERROR: no internet and no local recovery tool at $recovery_dir"
+      return 1
+    fi
+    local port=8765
+    yellow "==> no internet - serving local recovery tool"
+    (cd "$recovery_dir" && python3 -m http.server "$port" >/dev/null 2>&1) &
+    RECOVERY_SERVER_PID=$!
+    sleep 1
+    green "==> local recovery tool at http://localhost:$port/"
+    open "http://localhost:$port/"
+    echo
+    yellow "Press CTRL-C in this terminal when done to stop the local server."
+    wait "$RECOVERY_SERVER_PID" 2>/dev/null || true
+  fi
+}
 
 if [ -e "$LOCKFILE" ]; then
   existing_pid=$(cat "$LOCKFILE" 2>/dev/null)
@@ -172,7 +223,7 @@ yellow "==> step 1/2: bootloader + partition table + OTA data"
 do_flash \
   0x0     "$BIN_BOOT" \
   0x8000  "$BIN_PART" \
-  0xe000  "$BOOT_APP0" || exit $?
+  0xe000  "$BOOT_APP0" || { recovery_failover; exit 2; }
 
 sleep 3
 
@@ -188,7 +239,7 @@ while [ $OFFSET -lt "$APP_SIZE" ]; do
   dd if="$BIN_APP" bs=65536 count=1 skip=$BLOCK of=/tmp/dmxfire_app_block.bin 2>/dev/null
   BLOCK_SIZE=$(wc -c < /tmp/dmxfire_app_block.bin)
   yellow "    block $BLOCK  addr=$(printf '0x%x' $FLASH_ADDR)  size=$BLOCK_SIZE bytes"
-  do_flash "$FLASH_ADDR" /tmp/dmxfire_app_block.bin || exit $?
+  do_flash "$FLASH_ADDR" /tmp/dmxfire_app_block.bin || { recovery_failover; exit 2; }
   BLOCK=$((BLOCK+1))
   OFFSET=$((OFFSET+65536))
   sleep 3

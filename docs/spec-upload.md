@@ -79,14 +79,14 @@ After the last block, the script waits 8 s for the device to boot, then prints `
 
 ### Block-write keeps failing (12 retries exhausted)
 
-If a particular block can't be written, the device is in too tight a boot loop to catch. Use the browser tool to erase flash from scratch, then retry:
+`scripts/flash.sh` auto-launches the browser-based recovery tool when any block exhausts its retries — see [spec-flash-recovery-failover.md](spec-flash-recovery-failover.md). In short, the terminal prints the four `.bin` paths and offsets, then opens either <https://espressif.github.io/esptool-js/> (if online) or a local copy served from `tools/recovery/` at `http://localhost:8765/` (if offline). Operator workflow in either case:
 
-1. Open <https://espressif.github.io/esptool-js/> in Chrome or Edge.
-2. Connect to the device via WebUSB.
-3. Click **Erase Flash**.
-4. Re-run `scripts/flash.sh`.
+1. Hold the side button on the M5AtomS3.
+2. Unplug + replug USB while holding; release the button (chip is now in ROM bootloader mode).
+3. In the browser: **Connect** → select the `cu.usbmodem*` port.
+4. Load each `.bin` at its printed offset and click **Program** (or **Erase Flash** first if you want a full wipe before retrying the CLI).
 
-WebUSB bypasses macOS USB drivers and the Bluetooth interference path entirely.
+Web Serial uses a different OS USB driver path than the CLI esptool, so it often succeeds when the CLI gets wedged.
 
 ### NVS reset only (config defaults)
 

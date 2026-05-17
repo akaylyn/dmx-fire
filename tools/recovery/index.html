@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dmx-fire recovery flash (offline)</title>
+<style>
+  body { font: 14px/1.4 -apple-system, sans-serif; max-width: 760px; margin: 2em auto; padding: 0 1em; color: #222; }
+  h1 { margin-bottom: 0.2em; }
+  .sub { color: #888; margin-top: 0; }
+  ol li { margin: 0.4em 0; }
+  fieldset { margin: 1em 0; padding: 1em; border: 1px solid #ccc; border-radius: 6px; }
+  legend { font-weight: bold; padding: 0 0.5em; }
+  label { display: block; margin: 0.4em 0; font-family: ui-monospace, monospace; font-size: 13px; }
+  label input[type="file"] { margin-left: 0.5em; }
+  button { padding: 0.6em 1.2em; font-size: 14px; cursor: pointer; margin-right: 0.5em; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #log { background: #111; color: #0f0; padding: 1em; height: 280px; overflow-y: auto; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; border-radius: 6px; }
+  .ok { color: #2a7; }
+  .err { color: #c33; }
+  code { background: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>dmx-fire recovery flash</h1>
+<p class="sub">Offline fallback for <a href="https://espressif.github.io/esptool-js/">espressif.github.io/esptool-js</a>. Use when the CLI flash can&rsquo;t connect.</p>
+
+<fieldset>
+<legend>1. Put the device in download mode</legend>
+<ol>
+  <li>Hold the side button on the M5AtomS3.</li>
+  <li>Unplug + replug USB <i>while holding</i>.</li>
+  <li>Release the button &mdash; the chip is now in ROM bootloader mode.</li>
+</ol>
+</fieldset>
+
+<fieldset>
+<legend>2. Connect</legend>
+<button id="connect">Connect</button>
+<button id="disconnect" disabled>Disconnect</button>
+<span id="status">not connected</span>
+</fieldset>
+
+<fieldset>
+<legend>3. Load firmware binaries</legend>
+<p>From your terminal output, drop the four build artifacts here:</p>
+<label>0x00000 &nbsp; bootloader <input type="file" id="f-boot" accept=".bin"></label>
+<label>0x08000 &nbsp; partitions <input type="file" id="f-part" accept=".bin"></label>
+<label>0x0e000 &nbsp; boot_app0  <input type="file" id="f-ota"  accept=".bin"></label>
+<label>0x10000 &nbsp; app        <input type="file" id="f-app"  accept=".bin"></label>
+</fieldset>
+
+<fieldset>
+<legend>4. Program</legend>
+<button id="erase" disabled>Erase flash</button>
+<button id="program" disabled>Program all</button>
+</fieldset>
+
+<h3>Log</h3>
+<pre id="log"></pre>
+
+<script type="module">
+import { ESPLoader, Transport } from "./esptool.js";
+
+const els = {
+  connect: document.getElementById("connect"),
+  disconnect: document.getElementById("disconnect"),
+  erase: document.getElementById("erase"),
+  program: document.getElementById("program"),
+  status: document.getElementById("status"),
+  log: document.getElementById("log"),
+  boot: document.getElementById("f-boot"),
+  part: document.getElementById("f-part"),
+  ota:  document.getElementById("f-ota"),
+  app:  document.getElementById("f-app"),
+};
+
+let transport = null;
+let loader = null;
+
+function log(msg, cls) {
+  const line = document.createElement("span");
+  if (cls) line.className = cls;
+  line.textContent = msg + "\n";
+  els.log.appendChild(line);
+  els.log.scrollTop = els.log.scrollHeight;
+}
+
+const terminal = {
+  clean: () => { els.log.textContent = ""; },
+  writeLine: (s) => log(s),
+  write:     (s) => { els.log.appendChild(document.createTextNode(s)); els.log.scrollTop = els.log.scrollHeight; },
+};
+
+if (!("serial" in navigator)) {
+  log("ERROR: Web Serial is not supported in this browser. Use Chrome or Edge.", "err");
+  els.connect.disabled = true;
+}
+
+els.connect.onclick = async () => {
+  try {
+    const device = await navigator.serial.requestPort({});
+    transport = new Transport(device, true);
+    loader = new ESPLoader({
+      transport,
+      baudrate: 115200,
+      romBaudrate: 115200,
+      terminal,
+    });
+    const chip = await loader.main();
+    els.status.textContent = "connected: " + chip;
+    els.status.className = "ok";
+    els.connect.disabled = true;
+    els.disconnect.disabled = false;
+    els.erase.disabled = false;
+    els.program.disabled = false;
+    log("connected to " + chip, "ok");
+  } catch (e) {
+    log("connect failed: " + e.message, "err");
+  }
+};
+
+els.disconnect.onclick = async () => {
+  try { if (transport) await transport.disconnect(); } catch (e) {}
+  transport = null; loader = null;
+  els.status.textContent = "not connected";
+  els.status.className = "";
+  els.connect.disabled = false;
+  els.disconnect.disabled = true;
+  els.erase.disabled = true;
+  els.program.disabled = true;
+};
+
+els.erase.onclick = async () => {
+  if (!loader) return;
+  try {
+    log("erasing flash...");
+    await loader.eraseFlash();
+    log("erase done.", "ok");
+  } catch (e) {
+    log("erase failed: " + e.message, "err");
+  }
+};
+
+async function readBinaryString(file) {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let s = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+  }
+  return s;
+}
+
+els.program.onclick = async () => {
+  if (!loader) return;
+  const slots = [
+    { input: els.boot, address: 0x00000, name: "bootloader" },
+    { input: els.part, address: 0x08000, name: "partitions" },
+    { input: els.ota,  address: 0x0e000, name: "boot_app0"  },
+    { input: els.app,  address: 0x10000, name: "app"        },
+  ];
+  const fileArray = [];
+  for (const s of slots) {
+    if (!s.input.files[0]) {
+      log("ERROR: missing file for " + s.name + " (0x" + s.address.toString(16) + ")", "err");
+      return;
+    }
+    log("reading " + s.name + " (" + s.input.files[0].name + ")...");
+    fileArray.push({ data: await readBinaryString(s.input.files[0]), address: s.address });
+  }
+  try {
+    log("programming " + fileArray.length + " files...");
+    await loader.writeFlash({
+      fileArray,
+      flashSize: "keep",
+      flashMode: "dio",
+      flashFreq: "40m",
+      eraseAll: false,
+      compress: true,
+      reportProgress: (i, written, total) => {
+        const pct = ((written / total) * 100).toFixed(1);
+        els.status.textContent = slots[i].name + " " + pct + "%";
+      },
+    });
+    log("flash complete. unplug + replug to boot the new firmware.", "ok");
+    els.status.textContent = "done";
+  } catch (e) {
+    log("program failed: " + e.message, "err");
+  }
+};
+</script>
+</body>
+</html>

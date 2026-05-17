@@ -75,6 +75,18 @@ After the last block, the script waits 8 s for the device to boot, then prints `
 
 ---
 
+## Firmware-side causes of USB-JTAG failure
+
+The chip emulates its USB-Serial/JTAG interface in software running on the same cores as the application — there is no dedicated UART bridge. So a misbehaving sketch can wedge the upload path. Avoid the following in firmware to keep the device flashable without manual ROM-bootloader recovery:
+
+- **Boot-time WDT reset loops.** Any code path that crashes or triggers the watchdog before `loop()` settles will cycle fast enough that the USB CDC engine never finishes enumeration. Defer heavy initialization, and never block in `setup()` waiting on hardware that may be absent.
+- **Deep sleep without keeping the USB peripheral powered.** Entering `esp_deep_sleep_start()` (or any RTC-only sleep mode) tears down the USB CDC engine; the host sees the port disappear and the next upload attempt can't reset the chip. If sleep is needed, gate it behind a runtime check that keeps USB up while a host is connected.
+- **Disabling "USB CDC On Boot".** This Arduino-IDE flag (and its underlying `CONFIG_TINYUSB_CDC_ENABLED`) is what gives us a serial port at all on this board. Don't toggle it off in code or `boards.txt` overrides.
+
+If any of these slip in, the symptom is the same: `scripts/flash.sh` can't connect even on a fresh `--erase`, and the fix is the manual button-hold ROM-bootloader recovery described below.
+
+---
+
 ## Recovery paths
 
 ### Block-write keeps failing (12 retries exhausted)

@@ -1,0 +1,20 @@
+secrets.h
+
+# macOS metadata
+.DS_Store
+
+# Claude Code local config (user-specific)
+.claude/settings.local.json
+
+# Logs (kept locally, not committed)
+logs/*.log
+logs/serial/
+
+# Arduino build artifacts
+Test_Button_DMX/build/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

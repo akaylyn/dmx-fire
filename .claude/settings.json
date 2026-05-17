@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '[(now | todate), \"BASH:\", .tool_input.command] | join(\" \")' >> logs/claude.log 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '[(now | todate), \"EDIT:\", (.tool_input.file_path // .tool_response.filePath // \"?\")] | join(\" \")' >> logs/claude.log 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

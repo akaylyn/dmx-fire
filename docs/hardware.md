@@ -1,0 +1,95 @@
+# Hardware Reference
+
+All hardware used in this project, with links to offline documentation and original sources.
+
+---
+
+## Controller
+
+| Component | Description | Offline docs |
+|-----------|-------------|-------------|
+| [M5AtomS3 Lite](https://docs.m5stack.com/en/core/AtomS3%20Lite) | ESP32-S3 dev board, 8MB flash, WiFi, BLE, WS2812 LED, 1 button | [manuals/m5atomS3-lite.md](manuals/m5atomS3-lite.md) |
+| [M5Stack Unit DMX](https://docs.m5stack.com/en/unit/Unit-DMX) | Isolated RS-485 / DMX512 transceiver with XLR-3 connector | [manuals/m5stack-unit-dmx.md](manuals/m5stack-unit-dmx.md) |
+
+---
+
+## Fixtures
+
+| Component | Description | Offline docs |
+|-----------|-------------|-------------|
+| [LaluceNatz LL960S Strobe](https://www.lalucenatzonline.com/products/500w-960led-rgb-w-dj-strobe-light-panel-with-zone-control-for-concert-disco-party-light-free-shipping) | 960-LED RGBW 4-in-1 stage strobe, 240W, 8 segments, 4/11/32/39-ch DMX | [manuals/strobe-lalucenatz-500w-rgbw.md](manuals/strobe-lalucenatz-500w-rgbw.md) |
+| DMX512 Decoder (digital display) | DMX512-to-PWM decoder for LED strips | [manuals/dmx512-decoder.md](manuals/dmx512-decoder.md) |
+| 9PCS 4IN1 LED Washer Wall Light | RGBW wall wash fixture, 9× 4-in-1 emitters | [manuals/led-washer-wall-light-9pcs-4in1.md](manuals/led-washer-wall-light-9pcs-4in1.md) |
+
+---
+
+## Libraries
+
+| Library | Version | Purpose | Offline docs |
+|---------|---------|---------|-------------|
+| [M5Unified](https://github.com/m5stack/M5Unified) | 0.2.4 | Board init, buttons | [libraries/M5Unified.md](libraries/M5Unified.md) |
+| [FastLED](https://github.com/FastLED/FastLED) | 3.9.13 | Colour palettes, onboard LED | [libraries/FastLED.md](libraries/FastLED.md) |
+| [SparkFun DMX Shield Library](https://github.com/sparkfun/SparkFunDMX) | 2.0.1 | DMX512 output | [libraries/SparkFunDMX.md](libraries/SparkFunDMX.md) |
+| WebServer (ESP32 core) | 3.3.7 | HTTP config server | [libraries/WebServer.md](libraries/WebServer.md) |
+
+---
+
+## DMX channel assignment (this project)
+
+4 towers, ganged (same signal). Each tower occupies 15 channels:
+
+```
+Tower 0: ch  1–15
+Tower 1: ch 16–30
+Tower 2: ch 31–45
+Tower 3: ch 46–60
+```
+
+**Per tower** (base = towerIndex × 15):
+
+| Offset | DMX CH | Device | Signal | Notes |
+|--------|--------|--------|--------|-------|
+| +1 | 1 | Decoder | Red | |
+| +2 | 2 | Decoder | Green | |
+| +3 | 3 | Decoder | Blue | |
+| +4 | 4 | Decoder | White | Level controlled by brightness |
+| +5 | 1 | Strobe | Master dim | Always 255 (full) |
+| +6 | 2 | Strobe | RGB strobe speed | 0 idle, 128 when button held |
+| +7 | 3 | Strobe | RGB mode | Hardcoded 0 (direct colour) |
+| +8 | 4 | Strobe | RGB mode speed | Hardcoded 0 |
+| +9 | 5 | Strobe | Red | |
+| +10 | 6 | Strobe | Green | |
+| +11 | 7 | Strobe | Blue | |
+| +12 | 8 | Strobe | White strobe speed | 0 idle, 128 when button held |
+| +13 | 9 | Strobe | White mode | Hardcoded 0 (direct) |
+| +14 | 10 | Strobe | White mode speed | Hardcoded 0 |
+| +15 | 11 | Strobe | White dimmer | Level controlled by brightness |
+
+Set each decoder to its tower's start address (1, 16, 31, 46).  
+Set each strobe to its tower's start address + 4 (5, 20, 35, 50).
+
+---
+
+## Incomplete manuals
+
+The following docs were not available online and contain generic content only. If you have the physical manuals, photos can be used to fill in the missing sections (particularly DMX channel tables):
+
+- [manuals/dmx512-decoder.md](manuals/dmx512-decoder.md) — model not identified; content is generic
+- [manuals/led-washer-wall-light-9pcs-4in1.md](manuals/led-washer-wall-light-9pcs-4in1.md) — content is generic
+
+---
+
+## Wiring overview
+
+```
+[M5AtomS3 Lite]
+  PORTA G1 (RX) ──────────────────────────────────┐
+  PORTA G2 (TX) ──────────────────────────────────┤
+                                          [Unit DMX]
+                                          XLR-3 out ──► [Strobe light]
+                                                              XLR Thru ──► [Decoder]
+                                                                               XLR Thru ──► [Wall Washer]
+                                                                                                 └── 120Ω terminator
+  GPIO 39 ◄── [External button] (pull to GND)
+  GPIO 35 ──► [Onboard WS2812 LED] (built-in)
+```

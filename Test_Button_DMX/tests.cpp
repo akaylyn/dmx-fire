@@ -102,8 +102,8 @@ static void testFsm() {
   HEAD("Button FSM");
   FsmState before = fsmState;
 
-  // Should start IDLE (or be reset to it)
-  buttonFsmSetup();
+  // Reset only the FSM state — NOT buttonConfig, which was just loaded from NVS.
+  buttonInjectReset();
   if (fsmState == FSM_IDLE) PASS("FSM initialises to IDLE");
   else                       FAIL("FSM did not initialise to IDLE");
 
@@ -118,7 +118,7 @@ static void testFsm() {
   else                              FAIL("FIRE_ACTIVE broken by extra press");
 
   // Reset FSM — restore to IDLE for normal operation
-  buttonFsmSetup();
+  buttonInjectReset();
   INFO("FSM reset to IDLE for normal operation");
 }
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -52,7 +53,11 @@ RELOAD_SNIPPET = b"""<script>
 """
 
 # Match firmware defaults (Test_Button_DMX/storage.cpp).
+# `boot_id` is a per-process random fingerprint. The web UI persists the "Test
+# Fire armed" state alongside this id; when the device reboots (or this mock is
+# restarted) the id changes and the browser re-closes the arming cover.
 STATE = {
+    "boot_id": uuid.uuid4().hex,
     "boot_ms": int(time.time() * 1000),
     "fsm": {"state": "IDLE", "since_ms": 0},
     "button": {
@@ -149,6 +154,7 @@ def build_state_json() -> bytes:
     now = int(time.time() * 1000)
     fsm = STATE["fsm"]
     payload = {
+        "boot_id": STATE["boot_id"],
         "uptime_ms": now - STATE["boot_ms"],
         "fsm": {"state": fsm["state"], "elapsed_ms": now - fsm["since_ms"]},
         "button": STATE["button"],

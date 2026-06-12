@@ -15,230 +15,659 @@
     confluence: connected=true, fireLevel=255
     towers[0..3]: connected=true, palette=green, brightness=128, flameLevel=255
     morse:      unit=150
+
+  Design notes:
+    - Tab-based nav. Tabs are horizontally scrollable so the bar still fits
+      on a narrow phone and can grow without redesign.
+    - All controls are sized for touch: 48px+ targets, 28px slider thumbs,
+      16px base font (prevents iOS auto-zoom on focus).
+    - Last-selected tab is persisted in localStorage so reloads stay put.
 -->
 <html>
 <head>
-  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'>
+  <meta name='theme-color' content='#c33'>
   <title>DMX Fire Config</title>
   <style>
-    body { font-family: sans-serif; max-width: 520px; margin: 40px auto; padding: 0 16px }
-    fieldset { border: 1px solid #ccc; border-radius: 6px; padding: 12px; margin-bottom: 16px }
-    legend { font-weight: bold; padding: 0 6px }
-    label { display: block; margin-top: 12px; font-weight: bold }
-    select { width: 100%; margin-top: 4px; padding: 6px; font-size: 1rem }
-    .sr { display: flex; align-items: center; gap: 10px; margin-top: 4px }
-    input[type=range] { flex: 1 }
-    .val { min-width: 2.5em; text-align: right; font-variant-numeric: tabular-nums }
-    .cr { display: flex; align-items: center; gap: 8px; margin-top: 8px }
-    button { margin-top: 16px; padding: 8px 24px; font-size: 1rem }
+    :root {
+      --accent: #c33;
+      --accent-dark: #900;
+      --bg: #fff;
+      --fg: #111;
+      --muted: #666;
+      --line: #ddd;
+      --line-strong: #bbb;
+      --field-bg: #f7f7f7;
+      --tap: 48px;
+    }
+    * { box-sizing: border-box }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg) }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 16px;
+      line-height: 1.4;
+      padding-bottom: max(24px, env(safe-area-inset-bottom));
+    }
+
+    /* --- Sticky header + horizontally-scrollable tab nav --- */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+      padding-top: env(safe-area-inset-top);
+    }
+    header h1 {
+      margin: 0;
+      padding: 12px 16px 8px;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+    nav.tabs {
+      display: flex;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding: 0 8px;
+      gap: 4px;
+    }
+    nav.tabs::-webkit-scrollbar { display: none }
+    nav.tabs button {
+      flex: 0 0 auto;
+      background: transparent;
+      border: 0;
+      padding: 14px 18px;
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--muted);
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      white-space: nowrap;
+      min-height: var(--tap);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    nav.tabs button.active {
+      color: var(--fg);
+      border-bottom-color: var(--accent);
+    }
+    nav.tabs button:active { background: rgba(0, 0, 0, 0.04) }
+
+    /* --- Main content + tab panels --- */
+    main {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    section.tab[hidden] { display: none }
+    section.tab h2 {
+      margin: 0 0 12px;
+      font-size: 1.05rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* --- Form controls (touch-sized) --- */
+    fieldset {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px 18px;
+      margin: 0 0 16px;
+      background: var(--bg);
+    }
+    legend {
+      font-weight: 700;
+      padding: 0 8px;
+      font-size: 1rem;
+    }
+    label {
+      display: block;
+      margin-top: 16px;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    label:first-of-type { margin-top: 4px }
+
+    select, input[type=text] {
+      width: 100%;
+      margin-top: 6px;
+      padding: 12px 14px;
+      font-size: 16px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--field-bg);
+      color: var(--fg);
+      -webkit-appearance: none;
+      appearance: none;
+      min-height: var(--tap);
+    }
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23555' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+    }
+
+    /* Slider row: track + numeric readout */
+    .sr {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 8px;
+    }
+    input[type=range] {
+      flex: 1;
+      height: 36px;
+      margin: 0;
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 6px;
+      background: var(--line);
+      border-radius: 3px;
+    }
+    input[type=range]::-moz-range-track {
+      height: 6px;
+      background: var(--line);
+      border-radius: 3px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      margin-top: -11px;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+      cursor: pointer;
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+      cursor: pointer;
+    }
+    .val {
+      min-width: 4em;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--fg);
+    }
+
+    /* Checkbox row */
+    .cr {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+      min-height: var(--tap);
+    }
+    .cr input[type=checkbox] {
+      width: 24px;
+      height: 24px;
+      accent-color: var(--accent);
+      margin: 0;
+    }
+    .cr label {
+      display: inline;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    /* Submit / action buttons */
+    button[type=submit], .btn {
+      margin-top: 18px;
+      padding: 14px 24px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: 0;
+      border-radius: 8px;
+      background: var(--fg);
+      color: #fff;
+      cursor: pointer;
+      min-height: var(--tap);
+      width: 100%;
+    }
+    button[type=submit]:active, .btn:active { opacity: 0.85 }
+
+    /* Test Fire — large, centered, hard-to-miss */
+    .testfire-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    /* Arm toggle: models the protective flip-cover. Must be on for the */
+    /* fire button to react. Resets to OFF on every page load.          */
+    .arm-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: var(--field-bg);
+      min-height: var(--tap);
+    }
+    .arm-row input[type=checkbox] {
+      width: 28px;
+      height: 28px;
+      accent-color: var(--accent);
+      margin: 0;
+      flex: 0 0 auto;
+    }
+    .arm-row label {
+      margin: 0;
+      font-weight: 700;
+      font-size: 1rem;
+      flex: 1;
+    }
+    .arm-row .arm-state {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--muted);
+      color: #fff;
+    }
+    .arm-row.is-armed .arm-state { background: var(--accent) }
+
     #testFireBtn {
       display: block;
       width: 100%;
-      padding: 18px;
-      font-size: 1.1rem;
-      background: #c33;
+      padding: 48px 24px;
+      font-size: 1.3rem;
+      font-weight: 700;
+      background: var(--accent);
       color: #fff;
       border: 0;
-      border-radius: 6px;
+      border-radius: 14px;
       cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
+      box-shadow: 0 4px 0 var(--accent-dark);
+      min-height: 160px;
+      transition: background 0.15s, box-shadow 0.15s, opacity 0.15s;
     }
-    #testFireBtn:active { background: #900 }
+    #testFireBtn:active {
+      background: var(--accent-dark);
+      box-shadow: 0 0 0 var(--accent-dark);
+      transform: translateY(4px);
+    }
+    /* Disarmed state: cover is closed — button is visibly inert. */
+    #testFireBtn.disarmed {
+      background: repeating-linear-gradient(
+        135deg,
+        #999 0 16px,
+        #777 16px 32px
+      );
+      color: rgba(255, 255, 255, 0.85);
+      box-shadow: 0 4px 0 #555;
+      cursor: not-allowed;
+    }
+    #testFireBtn.disarmed:active {
+      background: repeating-linear-gradient(
+        135deg,
+        #999 0 16px,
+        #777 16px 32px
+      );
+      box-shadow: 0 4px 0 #555;
+      transform: none;
+    }
+    #testFireBtn small {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      opacity: 0.85;
+    }
+    .testfire-hint {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 4px 0 0;
+    }
+
+    /* Morse "Go" / "Stop" pair */
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .btn-row .btn { margin-top: 0; flex: 1 }
+    .btn-stop { background: var(--muted) }
+
+    /* Per-tower sub-tabs (inside Towers panel) */
+    .subtabs {
+      display: flex;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      gap: 6px;
+      margin: 0 0 14px;
+      padding-bottom: 2px;
+    }
+    .subtabs::-webkit-scrollbar { display: none }
+    .subtabs button {
+      flex: 0 0 auto;
+      padding: 10px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--bg);
+      color: var(--fg);
+      cursor: pointer;
+      white-space: nowrap;
+      min-height: 40px;
+    }
+    .subtabs button.active {
+      background: var(--fg);
+      color: #fff;
+      border-color: var(--fg);
+    }
+    .tower-panel[hidden] { display: none }
   </style>
 </head>
 <body>
-  <h2>DMX Fire Config</h2>
+  <header>
+    <h1>DMX Fire</h1>
+    <nav class='tabs' id='tabs' role='tablist'>
+      <button type='button' class='active' data-tab='test-fire' role='tab'>Test Fire</button>
+      <button type='button' data-tab='button' role='tab'>Button Config</button>
+      <button type='button' data-tab='morse' role='tab'>Morse</button>
+      <button type='button' data-tab='confluence' role='tab'>Confluence</button>
+      <button type='button' data-tab='towers' role='tab'>Tower Configs</button>
+    </nav>
+  </header>
 
-  <fieldset>
-    <legend>Test Fire</legend>
-    <button type='button' id='testFireBtn'>Press &amp; hold to fire</button>
-  </fieldset>
+  <main>
+    <!-- ===== TEST FIRE ===== -->
+    <section class='tab' data-tab='test-fire' role='tabpanel'>
+      <h2>Test Fire</h2>
+      <div class='testfire-wrap'>
+        <div class='arm-row' id='armRow'>
+          <input type='checkbox' id='armToggle'>
+          <label for='armToggle'>Cover open &mdash; armed</label>
+          <span class='arm-state' id='armState'>Safe</span>
+        </div>
+        <button type='button' id='testFireBtn' class='disarmed'>DISARMED<small>open the cover above to arm</small></button>
+        <p class='testfire-hint'>Mirrors the physical fire button. Release to stop. Cover resets to closed on every page load.</p>
+      </div>
+    </section>
 
-  <fieldset>
-    <legend>Button Config</legend>
-    <form method='POST' action='/set'>
-      <input type='hidden' name='target' value='button'>
-      <label>Mode<select name='mode' id='modeSelect'>
-        <option value='0' selected>Fireball</option>
-        <option value='1'>Party</option>
-        <option value='2'>Machine Gun</option>
-      </select></label>
-      <label>Fire duration (ms)<div class='sr'>
-        <input type='range' name='fireDurationMs' min='50' max='10000' step='50' value='3000' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>3000</span>
-      </div></label>
-      <div id='mgRow' style='display:none'>
-        <label>Machine gun burst (ms)<div class='sr'>
-          <input type='range' name='machineGunBurstMs' min='50' max='2000' step='50' value='200' oninput="this.nextElementSibling.textContent=this.value">
-          <span class='val'>200</span>
+    <!-- ===== BUTTON CONFIG ===== -->
+    <section class='tab' data-tab='button' role='tabpanel' hidden>
+      <h2>Button Config</h2>
+      <fieldset>
+        <legend>Fire Behaviour</legend>
+        <form method='POST' action='/set'>
+          <input type='hidden' name='target' value='button'>
+          <label>Mode<select name='mode' id='modeSelect'>
+            <option value='0' selected>Fireball</option>
+            <option value='1'>Party</option>
+            <option value='2'>Machine Gun</option>
+          </select></label>
+          <label>Fire duration (ms)<div class='sr'>
+            <input type='range' name='fireDurationMs' min='50' max='10000' step='50' value='3000' oninput="this.nextElementSibling.textContent=this.value">
+            <span class='val'>3000</span>
+          </div></label>
+          <div id='mgRow' style='display:none'>
+            <label>Machine gun burst (ms)<div class='sr'>
+              <input type='range' name='machineGunBurstMs' min='50' max='2000' step='50' value='200' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>200</span>
+            </div></label>
+          </div>
+          <label>Cooldown (ms)<div class='sr'>
+            <input type='range' name='cooldownMs' min='50' max='30000' step='50' value='10000' oninput="this.nextElementSibling.textContent=this.value">
+            <span class='val'>10000</span>
+          </div></label>
+          <label>End cue<select name='endCuePattern'>
+            <option value='0' selected>White flash fade</option>
+          </select></label>
+          <button type='submit'>Save</button>
+        </form>
+      </fieldset>
+    </section>
+
+    <!-- ===== MORSE ===== -->
+    <section class='tab' data-tab='morse' role='tabpanel' hidden>
+      <h2>Morse Code</h2>
+      <fieldset>
+        <legend>Send Message</legend>
+        <label>Message
+          <input type='text' id='morseText' maxlength='80' placeholder='HELLO WORLD' autocomplete='off' autocapitalize='characters'>
+        </label>
+        <label>Unit (ms)<div class='sr'>
+          <input type='range' name='morseUnitMs' min='50' max='500' step='10' value='150' oninput="this.nextElementSibling.textContent=this.value">
+          <span class='val'>150</span>
         </div></label>
+        <div class='btn-row'>
+          <button type='button' class='btn' id='morseGo'>Fire in Morse</button>
+          <button type='button' class='btn btn-stop' id='morseStop'>Stop</button>
+        </div>
+      </fieldset>
+    </section>
+
+    <!-- ===== CONFLUENCE ===== -->
+    <section class='tab' data-tab='confluence' role='tabpanel' hidden>
+      <h2>Confluence</h2>
+      <fieldset>
+        <legend>Propane Solenoid</legend>
+        <form method='POST' action='/set'>
+          <input type='hidden' name='target' value='confluence'>
+          <div class='cr'>
+            <input type='checkbox' name='connected' id='cf' checked>
+            <label for='cf'>Connected</label>
+          </div>
+          <label>Fire level<div class='sr'>
+            <input type='range' name='fireLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+            <span class='val'>255</span>
+          </div></label>
+          <button type='submit'>Save</button>
+        </form>
+      </fieldset>
+    </section>
+
+    <!-- ===== TOWERS ===== -->
+    <section class='tab' data-tab='towers' role='tabpanel' hidden>
+      <h2>Tower Configs</h2>
+
+      <div class='subtabs' id='towerSubtabs' role='tablist'>
+        <button type='button' class='active' data-sub='all' role='tab'>All</button>
+        <button type='button' data-sub='t0' role='tab'>Tower 0</button>
+        <button type='button' data-sub='t1' role='tab'>Tower 1</button>
+        <button type='button' data-sub='t2' role='tab'>Tower 2</button>
+        <button type='button' data-sub='t3' role='tab'>Tower 3</button>
       </div>
-      <label>Cooldown (ms)<div class='sr'>
-        <input type='range' name='cooldownMs' min='50' max='30000' step='50' value='10000' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>10000</span>
-      </div></label>
-      <label>End cue<select name='endCuePattern'>
-        <option value='0' selected>White flash fade</option>
-      </select></label>
-      <button type='submit'>Save</button>
-    </form>
-  </fieldset>
 
-  <fieldset>
-    <legend>Morse Code</legend>
-    <label>Message
-      <input type='text' id='morseText' maxlength='80' placeholder='HELLO WORLD' style='width:100%;padding:6px;font-size:1rem;margin-top:4px'>
-    </label>
-    <label>Unit (ms)<div class='sr'>
-      <input type='range' name='morseUnitMs' min='50' max='500' step='10' value='150' oninput="this.nextElementSibling.textContent=this.value">
-      <span class='val'>150</span>
-    </div></label>
-    <button type='button' id='morseGo'>Fire in Morse</button>
-    <button type='button' id='morseStop'>Stop</button>
-  </fieldset>
-
-  <fieldset>
-    <legend>Confluence</legend>
-    <form method='POST' action='/set'>
-      <input type='hidden' name='target' value='confluence'>
-      <div class='cr'>
-        <input type='checkbox' name='connected' id='cf' checked>
-        <label for='cf' style='display:inline;margin-top:0'>Connected</label>
+      <div class='tower-panel' data-sub='all'>
+        <fieldset>
+          <legend>Apply to All Towers</legend>
+          <form method='POST' action='/set'>
+            <input type='hidden' name='target' value='all'>
+            <label>Palette<select name='palette'>
+              <option value='green' selected>Green fire</option>
+              <option value='blue'>Blue fire</option>
+              <option value='fire'>Natural fire</option>
+            </select></label>
+            <label>Brightness<div class='sr'>
+              <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>128</span>
+            </div></label>
+            <label>Flame level<div class='sr'>
+              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>255</span>
+            </div></label>
+            <button type='submit'>Apply to All</button>
+          </form>
+        </fieldset>
       </div>
-      <label>Fire level<div class='sr'>
-        <input type='range' name='fireLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>255</span>
-      </div></label>
-      <button type='submit'>Save</button>
-    </form>
-  </fieldset>
 
-  <fieldset>
-    <legend>All Towers</legend>
-    <form method='POST' action='/set'>
-      <input type='hidden' name='target' value='all'>
-      <label>Palette<select name='palette'>
-        <option value='green' selected>Green fire</option>
-        <option value='blue'>Blue fire</option>
-        <option value='fire'>Natural fire</option>
-      </select></label>
-      <label>Brightness<div class='sr'>
-        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>128</span>
-      </div></label>
-      <label>Flame level<div class='sr'>
-        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>255</span>
-      </div></label>
-      <button type='submit'>Apply to All</button>
-    </form>
-  </fieldset>
-
-  <!-- Per-tower fieldsets (Tower 0..3). In web.cpp this is a for-loop. -->
-  <fieldset>
-    <legend>Tower 0</legend>
-    <form method='POST' action='/set'>
-      <input type='hidden' name='target' value='0'>
-      <div class='cr'>
-        <input type='checkbox' name='connected' id='c0' checked>
-        <label for='c0' style='display:inline;margin-top:0'>Connected</label>
+      <!-- Tower 0..3 panels — in web.cpp these are emitted by a for-loop. -->
+      <div class='tower-panel' data-sub='t0' hidden>
+        <fieldset>
+          <legend>Tower 0</legend>
+          <form method='POST' action='/set'>
+            <input type='hidden' name='target' value='0'>
+            <div class='cr'>
+              <input type='checkbox' name='connected' id='c0' checked>
+              <label for='c0'>Connected</label>
+            </div>
+            <label>Palette<select name='palette'>
+              <option value='green' selected>Green fire</option>
+              <option value='blue'>Blue fire</option>
+              <option value='fire'>Natural fire</option>
+            </select></label>
+            <label>Brightness<div class='sr'>
+              <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>128</span>
+            </div></label>
+            <label>Flame level<div class='sr'>
+              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>255</span>
+            </div></label>
+            <button type='submit'>Save</button>
+          </form>
+        </fieldset>
       </div>
-      <label>Palette<select name='palette'>
-        <option value='green' selected>Green fire</option>
-        <option value='blue'>Blue fire</option>
-        <option value='fire'>Natural fire</option>
-      </select></label>
-      <label>Brightness<div class='sr'>
-        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>128</span>
-      </div></label>
-      <label>Flame level<div class='sr'>
-        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>255</span>
-      </div></label>
-      <button type='submit'>Save</button>
-    </form>
-  </fieldset>
 
-  <fieldset>
-    <legend>Tower 1</legend>
-    <form method='POST' action='/set'>
-      <input type='hidden' name='target' value='1'>
-      <div class='cr'>
-        <input type='checkbox' name='connected' id='c1' checked>
-        <label for='c1' style='display:inline;margin-top:0'>Connected</label>
+      <div class='tower-panel' data-sub='t1' hidden>
+        <fieldset>
+          <legend>Tower 1</legend>
+          <form method='POST' action='/set'>
+            <input type='hidden' name='target' value='1'>
+            <div class='cr'>
+              <input type='checkbox' name='connected' id='c1' checked>
+              <label for='c1'>Connected</label>
+            </div>
+            <label>Palette<select name='palette'>
+              <option value='green' selected>Green fire</option>
+              <option value='blue'>Blue fire</option>
+              <option value='fire'>Natural fire</option>
+            </select></label>
+            <label>Brightness<div class='sr'>
+              <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>128</span>
+            </div></label>
+            <label>Flame level<div class='sr'>
+              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>255</span>
+            </div></label>
+            <button type='submit'>Save</button>
+          </form>
+        </fieldset>
       </div>
-      <label>Palette<select name='palette'>
-        <option value='green' selected>Green fire</option>
-        <option value='blue'>Blue fire</option>
-        <option value='fire'>Natural fire</option>
-      </select></label>
-      <label>Brightness<div class='sr'>
-        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>128</span>
-      </div></label>
-      <label>Flame level<div class='sr'>
-        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>255</span>
-      </div></label>
-      <button type='submit'>Save</button>
-    </form>
-  </fieldset>
 
-  <fieldset>
-    <legend>Tower 2</legend>
-    <form method='POST' action='/set'>
-      <input type='hidden' name='target' value='2'>
-      <div class='cr'>
-        <input type='checkbox' name='connected' id='c2' checked>
-        <label for='c2' style='display:inline;margin-top:0'>Connected</label>
+      <div class='tower-panel' data-sub='t2' hidden>
+        <fieldset>
+          <legend>Tower 2</legend>
+          <form method='POST' action='/set'>
+            <input type='hidden' name='target' value='2'>
+            <div class='cr'>
+              <input type='checkbox' name='connected' id='c2' checked>
+              <label for='c2'>Connected</label>
+            </div>
+            <label>Palette<select name='palette'>
+              <option value='green' selected>Green fire</option>
+              <option value='blue'>Blue fire</option>
+              <option value='fire'>Natural fire</option>
+            </select></label>
+            <label>Brightness<div class='sr'>
+              <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>128</span>
+            </div></label>
+            <label>Flame level<div class='sr'>
+              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>255</span>
+            </div></label>
+            <button type='submit'>Save</button>
+          </form>
+        </fieldset>
       </div>
-      <label>Palette<select name='palette'>
-        <option value='green' selected>Green fire</option>
-        <option value='blue'>Blue fire</option>
-        <option value='fire'>Natural fire</option>
-      </select></label>
-      <label>Brightness<div class='sr'>
-        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>128</span>
-      </div></label>
-      <label>Flame level<div class='sr'>
-        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>255</span>
-      </div></label>
-      <button type='submit'>Save</button>
-    </form>
-  </fieldset>
 
-  <fieldset>
-    <legend>Tower 3</legend>
-    <form method='POST' action='/set'>
-      <input type='hidden' name='target' value='3'>
-      <div class='cr'>
-        <input type='checkbox' name='connected' id='c3' checked>
-        <label for='c3' style='display:inline;margin-top:0'>Connected</label>
+      <div class='tower-panel' data-sub='t3' hidden>
+        <fieldset>
+          <legend>Tower 3</legend>
+          <form method='POST' action='/set'>
+            <input type='hidden' name='target' value='3'>
+            <div class='cr'>
+              <input type='checkbox' name='connected' id='c3' checked>
+              <label for='c3'>Connected</label>
+            </div>
+            <label>Palette<select name='palette'>
+              <option value='green' selected>Green fire</option>
+              <option value='blue'>Blue fire</option>
+              <option value='fire'>Natural fire</option>
+            </select></label>
+            <label>Brightness<div class='sr'>
+              <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>128</span>
+            </div></label>
+            <label>Flame level<div class='sr'>
+              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>255</span>
+            </div></label>
+            <button type='submit'>Save</button>
+          </form>
+        </fieldset>
       </div>
-      <label>Palette<select name='palette'>
-        <option value='green' selected>Green fire</option>
-        <option value='blue'>Blue fire</option>
-        <option value='fire'>Natural fire</option>
-      </select></label>
-      <label>Brightness<div class='sr'>
-        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>128</span>
-      </div></label>
-      <label>Flame level<div class='sr'>
-        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-        <span class='val'>255</span>
-      </div></label>
-      <button type='submit'>Save</button>
-    </form>
-  </fieldset>
+    </section>
+  </main>
 
   <script>
-    // Auto-save on any control change (mirrors form behaviour on device).
+    // ---- Top tab nav: switch panels, persist selection, scroll active tab into view ----
+    (function () {
+      var TAB_KEY = 'dmxFireTab';
+      var tabBtns = document.querySelectorAll('nav.tabs button');
+      var panels = document.querySelectorAll('section.tab');
+      function activate(name) {
+        tabBtns.forEach(function (b) {
+          var on = b.dataset.tab === name;
+          b.classList.toggle('active', on);
+          if (on) b.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        });
+        panels.forEach(function (p) { p.hidden = p.dataset.tab !== name; });
+        try { localStorage.setItem(TAB_KEY, name); } catch (e) {}
+      }
+      tabBtns.forEach(function (b) {
+        b.addEventListener('click', function () { activate(b.dataset.tab); });
+      });
+      var saved;
+      try { saved = localStorage.getItem(TAB_KEY); } catch (e) {}
+      if (saved && document.querySelector('section.tab[data-tab="' + saved + '"]')) activate(saved);
+    })();
+
+    // ---- Tower sub-tabs (All / 0 / 1 / 2 / 3) ----
+    (function () {
+      var btns = document.querySelectorAll('#towerSubtabs button');
+      var panels = document.querySelectorAll('.tower-panel');
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          btns.forEach(function (x) { x.classList.toggle('active', x === b); });
+          panels.forEach(function (p) { p.hidden = p.dataset.sub !== b.dataset.sub; });
+          b.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        });
+      });
+    })();
+
+    // ---- Auto-save on any control change (mirrors form behaviour on device) ----
     document.querySelectorAll('form').forEach(function (form) {
       form.querySelectorAll('select,input[type=range],input[type=checkbox]').forEach(function (el) {
         el.addEventListener('change', function () {
@@ -251,13 +680,75 @@
       });
     });
 
-    // Test Fire button: press & hold to fire, release to stop.
+    // ---- Test Fire button: press & hold to fire; gated by Arm toggle ----
+    // The Arm checkbox models a protective flip-cover. State is persisted in
+    // localStorage *fingerprinted by the device's boot_id*, so the cover stays
+    // open across page reloads on the same boot but re-closes whenever the
+    // device reboots (boot_id changes → stale armed state is discarded).
     (function () {
       var b = document.getElementById('testFireBtn');
-      if (!b) return;
+      var arm = document.getElementById('armToggle');
+      var row = document.getElementById('armRow');
+      var state = document.getElementById('armState');
+      if (!b || !arm) return;
+
+      var ARM_KEY = 'dmxFireArm';
+      var armed = false;
+
+      function render() {
+        arm.checked = armed;
+        b.classList.toggle('disarmed', !armed);
+        b.innerHTML = armed
+          ? 'PRESS &amp; HOLD<br>TO FIRE'
+          : 'DISARMED<small>open the cover above to arm</small>';
+        if (row) row.classList.toggle('is-armed', armed);
+        if (state) state.textContent = armed ? 'Armed' : 'Safe';
+      }
+
+      function setArmed(on, opts) {
+        var prev = armed;
+        armed = !!on;
+        render();
+        try {
+          if (armed && window._dmxBootId) {
+            localStorage.setItem(ARM_KEY, JSON.stringify({ armed: true, bootId: window._dmxBootId }));
+          } else {
+            localStorage.removeItem(ARM_KEY);
+          }
+        } catch (e) {}
+        // If we just disarmed mid-press, send a release so the device can't latch on.
+        if (prev && !armed && !(opts && opts.silent)) {
+          fetch('/api/button/release', { method: 'POST' }).catch(function () {});
+        }
+      }
+
+      // Default disarmed until we confirm the saved state belongs to this boot.
+      setArmed(false, { silent: true });
+      arm.addEventListener('change', function () { setArmed(arm.checked); });
+
+      fetch('/api/state').then(function (r) { return r.json(); }).then(function (s) {
+        window._dmxBootId = s.boot_id || null;
+        var saved = null;
+        try { saved = JSON.parse(localStorage.getItem(ARM_KEY) || 'null'); } catch (e) {}
+        if (saved && saved.armed && window._dmxBootId && saved.bootId === window._dmxBootId) {
+          setArmed(true, { silent: true });
+        } else {
+          // Stale (device rebooted) or absent — drop it.
+          try { localStorage.removeItem(ARM_KEY); } catch (e) {}
+        }
+      }).catch(function () { /* stay disarmed if /api/state is unreachable */ });
+
       var post = function (p) { fetch(p, { method: 'POST' }); };
-      var press = function (e) { e.preventDefault(); post('/api/button/press'); };
-      var release = function (e) { e.preventDefault(); post('/api/button/release'); };
+      var press = function (e) {
+        if (!armed) { e.preventDefault(); return; }
+        e.preventDefault();
+        post('/api/button/press');
+      };
+      var release = function (e) {
+        if (!armed) { e.preventDefault(); return; }
+        e.preventDefault();
+        post('/api/button/release');
+      };
       b.addEventListener('mousedown', press);
       b.addEventListener('mouseup', release);
       b.addEventListener('mouseleave', release);
@@ -266,7 +757,7 @@
       b.addEventListener('touchcancel', release, { passive: false });
     })();
 
-    // Show "Machine gun burst" slider only when Mode == Machine Gun (2).
+    // ---- Show "Machine gun burst" slider only when Mode == Machine Gun (2) ----
     (function () {
       var sel = document.getElementById('modeSelect');
       var row = document.getElementById('mgRow');
@@ -276,7 +767,7 @@
       });
     })();
 
-    // Morse code: send text + current unit, or stop playback.
+    // ---- Morse: send text + current unit, or stop playback ----
     (function () {
       var t = document.getElementById('morseText');
       var go = document.getElementById('morseGo');

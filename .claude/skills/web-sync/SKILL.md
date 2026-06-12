@@ -42,6 +42,14 @@ These are dynamic in `web.cpp` and must stay as C++ code, not be flattened into 
 
 If the user changed a default value in `index.html` (e.g. `value='3000'` to `value='5000'`), that is a firmware default change — update `storage.cpp` defaults, not `web.cpp`. Confirm with the user before doing this.
 
+### 3b. Check whether `/api/state` needs new fields
+
+The browser-side JS may depend on JSON fields the firmware doesn't yet emit. Inspect the served `index.html` for any `/api/state` references and confirm every field consumed by the JS is also emitted by `handleApiState()` in `web.cpp`. Examples:
+
+- `boot_id` — a per-boot fingerprint, used by the Test Fire arm cover so it auto-closes after a device reboot. Firmware needs to generate this once in `setup()` (e.g. with `esp_random()`) and emit it in `handleApiState()`.
+
+If a field is missing, add it to `handleApiState()` and any necessary supporting code (boot-time setup, header declarations) as part of the same sync. The mock server in `tools/web-preview/server.py` is the reference shape.
+
 ### 4. Apply the changes to web.cpp
 
 Use `Edit` to update the relevant `F("...")` chunks. Conventions to follow when writing back:

@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<!--
+  CANONICAL web UI for DMX Fire — source of truth.
+
+  Edit this file FIRST when iterating on the web interface. Once a change is
+  ready, run the `/web-sync` skill to port the static HTML/CSS/JS into the
+  `F()` strings in Test_Button_DMX/web.cpp (buildPage()), preserving the
+  dynamic C++ templating (mode `selected`, slider values, tower loop, etc.).
+
+  Locally preview with:  scripts/web-debug.sh   → http://localhost:8123/
+
+  Default values shown below match the firmware defaults in storage.cpp:
+    button:     mode=0 (Fireball), fireDurationMs=3000, cooldownMs=10000,
+                endCuePattern=0, machineGunBurstMs=200
+    confluence: connected=true, fireLevel=255
+    towers[0..3]: connected=true, palette=green, brightness=128, flameLevel=255
+    morse:      unit=150
+-->
+<html>
+<head>
+  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <title>DMX Fire Config</title>
+  <style>
+    body { font-family: sans-serif; max-width: 520px; margin: 40px auto; padding: 0 16px }
+    fieldset { border: 1px solid #ccc; border-radius: 6px; padding: 12px; margin-bottom: 16px }
+    legend { font-weight: bold; padding: 0 6px }
+    label { display: block; margin-top: 12px; font-weight: bold }
+    select { width: 100%; margin-top: 4px; padding: 6px; font-size: 1rem }
+    .sr { display: flex; align-items: center; gap: 10px; margin-top: 4px }
+    input[type=range] { flex: 1 }
+    .val { min-width: 2.5em; text-align: right; font-variant-numeric: tabular-nums }
+    .cr { display: flex; align-items: center; gap: 8px; margin-top: 8px }
+    button { margin-top: 16px; padding: 8px 24px; font-size: 1rem }
+    #testFireBtn {
+      display: block;
+      width: 100%;
+      padding: 18px;
+      font-size: 1.1rem;
+      background: #c33;
+      color: #fff;
+      border: 0;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    #testFireBtn:active { background: #900 }
+  </style>
+</head>
+<body>
+  <h2>DMX Fire Config</h2>
+
+  <fieldset>
+    <legend>Test Fire</legend>
+    <button type='button' id='testFireBtn'>Press &amp; hold to fire</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Button Config</legend>
+    <form method='POST' action='/set'>
+      <input type='hidden' name='target' value='button'>
+      <label>Mode<select name='mode' id='modeSelect'>
+        <option value='0' selected>Fireball</option>
+        <option value='1'>Party</option>
+        <option value='2'>Machine Gun</option>
+      </select></label>
+      <label>Fire duration (ms)<div class='sr'>
+        <input type='range' name='fireDurationMs' min='50' max='10000' step='50' value='3000' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>3000</span>
+      </div></label>
+      <div id='mgRow' style='display:none'>
+        <label>Machine gun burst (ms)<div class='sr'>
+          <input type='range' name='machineGunBurstMs' min='50' max='2000' step='50' value='200' oninput="this.nextElementSibling.textContent=this.value">
+          <span class='val'>200</span>
+        </div></label>
+      </div>
+      <label>Cooldown (ms)<div class='sr'>
+        <input type='range' name='cooldownMs' min='50' max='30000' step='50' value='10000' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>10000</span>
+      </div></label>
+      <label>End cue<select name='endCuePattern'>
+        <option value='0' selected>White flash fade</option>
+      </select></label>
+      <button type='submit'>Save</button>
+    </form>
+  </fieldset>
+
+  <fieldset>
+    <legend>Morse Code</legend>
+    <label>Message
+      <input type='text' id='morseText' maxlength='80' placeholder='HELLO WORLD' style='width:100%;padding:6px;font-size:1rem;margin-top:4px'>
+    </label>
+    <label>Unit (ms)<div class='sr'>
+      <input type='range' name='morseUnitMs' min='50' max='500' step='10' value='150' oninput="this.nextElementSibling.textContent=this.value">
+      <span class='val'>150</span>
+    </div></label>
+    <button type='button' id='morseGo'>Fire in Morse</button>
+    <button type='button' id='morseStop'>Stop</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Confluence</legend>
+    <form method='POST' action='/set'>
+      <input type='hidden' name='target' value='confluence'>
+      <div class='cr'>
+        <input type='checkbox' name='connected' id='cf' checked>
+        <label for='cf' style='display:inline;margin-top:0'>Connected</label>
+      </div>
+      <label>Fire level<div class='sr'>
+        <input type='range' name='fireLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>255</span>
+      </div></label>
+      <button type='submit'>Save</button>
+    </form>
+  </fieldset>
+
+  <fieldset>
+    <legend>All Towers</legend>
+    <form method='POST' action='/set'>
+      <input type='hidden' name='target' value='all'>
+      <label>Palette<select name='palette'>
+        <option value='green' selected>Green fire</option>
+        <option value='blue'>Blue fire</option>
+        <option value='fire'>Natural fire</option>
+      </select></label>
+      <label>Brightness<div class='sr'>
+        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>128</span>
+      </div></label>
+      <label>Flame level<div class='sr'>
+        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>255</span>
+      </div></label>
+      <button type='submit'>Apply to All</button>
+    </form>
+  </fieldset>
+
+  <!-- Per-tower fieldsets (Tower 0..3). In web.cpp this is a for-loop. -->
+  <fieldset>
+    <legend>Tower 0</legend>
+    <form method='POST' action='/set'>
+      <input type='hidden' name='target' value='0'>
+      <div class='cr'>
+        <input type='checkbox' name='connected' id='c0' checked>
+        <label for='c0' style='display:inline;margin-top:0'>Connected</label>
+      </div>
+      <label>Palette<select name='palette'>
+        <option value='green' selected>Green fire</option>
+        <option value='blue'>Blue fire</option>
+        <option value='fire'>Natural fire</option>
+      </select></label>
+      <label>Brightness<div class='sr'>
+        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>128</span>
+      </div></label>
+      <label>Flame level<div class='sr'>
+        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>255</span>
+      </div></label>
+      <button type='submit'>Save</button>
+    </form>
+  </fieldset>
+
+  <fieldset>
+    <legend>Tower 1</legend>
+    <form method='POST' action='/set'>
+      <input type='hidden' name='target' value='1'>
+      <div class='cr'>
+        <input type='checkbox' name='connected' id='c1' checked>
+        <label for='c1' style='display:inline;margin-top:0'>Connected</label>
+      </div>
+      <label>Palette<select name='palette'>
+        <option value='green' selected>Green fire</option>
+        <option value='blue'>Blue fire</option>
+        <option value='fire'>Natural fire</option>
+      </select></label>
+      <label>Brightness<div class='sr'>
+        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>128</span>
+      </div></label>
+      <label>Flame level<div class='sr'>
+        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>255</span>
+      </div></label>
+      <button type='submit'>Save</button>
+    </form>
+  </fieldset>
+
+  <fieldset>
+    <legend>Tower 2</legend>
+    <form method='POST' action='/set'>
+      <input type='hidden' name='target' value='2'>
+      <div class='cr'>
+        <input type='checkbox' name='connected' id='c2' checked>
+        <label for='c2' style='display:inline;margin-top:0'>Connected</label>
+      </div>
+      <label>Palette<select name='palette'>
+        <option value='green' selected>Green fire</option>
+        <option value='blue'>Blue fire</option>
+        <option value='fire'>Natural fire</option>
+      </select></label>
+      <label>Brightness<div class='sr'>
+        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>128</span>
+      </div></label>
+      <label>Flame level<div class='sr'>
+        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>255</span>
+      </div></label>
+      <button type='submit'>Save</button>
+    </form>
+  </fieldset>
+
+  <fieldset>
+    <legend>Tower 3</legend>
+    <form method='POST' action='/set'>
+      <input type='hidden' name='target' value='3'>
+      <div class='cr'>
+        <input type='checkbox' name='connected' id='c3' checked>
+        <label for='c3' style='display:inline;margin-top:0'>Connected</label>
+      </div>
+      <label>Palette<select name='palette'>
+        <option value='green' selected>Green fire</option>
+        <option value='blue'>Blue fire</option>
+        <option value='fire'>Natural fire</option>
+      </select></label>
+      <label>Brightness<div class='sr'>
+        <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>128</span>
+      </div></label>
+      <label>Flame level<div class='sr'>
+        <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
+        <span class='val'>255</span>
+      </div></label>
+      <button type='submit'>Save</button>
+    </form>
+  </fieldset>
+
+  <script>
+    // Auto-save on any control change (mirrors form behaviour on device).
+    document.querySelectorAll('form').forEach(function (form) {
+      form.querySelectorAll('select,input[type=range],input[type=checkbox]').forEach(function (el) {
+        el.addEventListener('change', function () {
+          fetch('/set', { method: 'POST', body: new FormData(form) });
+        });
+      });
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        fetch('/set', { method: 'POST', body: new FormData(form) });
+      });
+    });
+
+    // Test Fire button: press & hold to fire, release to stop.
+    (function () {
+      var b = document.getElementById('testFireBtn');
+      if (!b) return;
+      var post = function (p) { fetch(p, { method: 'POST' }); };
+      var press = function (e) { e.preventDefault(); post('/api/button/press'); };
+      var release = function (e) { e.preventDefault(); post('/api/button/release'); };
+      b.addEventListener('mousedown', press);
+      b.addEventListener('mouseup', release);
+      b.addEventListener('mouseleave', release);
+      b.addEventListener('touchstart', press, { passive: false });
+      b.addEventListener('touchend', release, { passive: false });
+      b.addEventListener('touchcancel', release, { passive: false });
+    })();
+
+    // Show "Machine gun burst" slider only when Mode == Machine Gun (2).
+    (function () {
+      var sel = document.getElementById('modeSelect');
+      var row = document.getElementById('mgRow');
+      if (!sel || !row) return;
+      sel.addEventListener('change', function () {
+        row.style.display = sel.value === '2' ? '' : 'none';
+      });
+    })();
+
+    // Morse code: send text + current unit, or stop playback.
+    (function () {
+      var t = document.getElementById('morseText');
+      var go = document.getElementById('morseGo');
+      var stop = document.getElementById('morseStop');
+      if (!t || !go || !stop) return;
+      go.addEventListener('click', function () {
+        var u = document.querySelector('input[name=morseUnitMs]');
+        var fd = new FormData();
+        fd.append('text', t.value);
+        if (u) fd.append('unitMs', u.value);
+        fetch('/api/morse', { method: 'POST', body: fd });
+      });
+      stop.addEventListener('click', function () {
+        fetch('/api/morse/stop', { method: 'POST' });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<!--
+  DEV-ONLY theme simulator for DMX Fire.
+
+  This page is NOT part of the firmware web UI. It is served from the local
+  mock server at http://localhost:8123/simulator for previewing idle theme
+  animations before /web-sync ports changes to the device.
+
+  The /web-sync skill must NEVER port this file's contents into web.cpp —
+  the firmware should stay lean. Theme logic in here is a JS port of the
+  firmware's themes; if you change the firmware rendering, mirror the change
+  in renderTheme() below to keep the preview accurate.
+
+  Theme catalogue (matches Test_Button_DMX/palettes.cpp + new procedural):
+    green        — green-fire gradient with 800/3200 flash cycle
+    blue         — blue-fire gradient with flash cycle
+    fire         — natural-fire gradient with flash cycle
+    simon        — global rotating R/B/Y/G across 4 towers (1s/beat)
+    rainbow      — continuous hue rotation, 90 deg offset per tower
+    warm_white   — steady dim warm white (chill ambient)
+    bright_white — steady full-bright white
+    candle       — warm white with per-tower Perlin-ish flicker
+-->
+<html>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <title>DMX Fire — Theme Simulator</title>
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --panel: #16161a;
+      --line: #2a2a31;
+      --fg: #f0f0f3;
+      --muted: #8c8c95;
+      --accent: #c33;
+    }
+    * { box-sizing: border-box }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif }
+    body { padding: 16px; min-height: 100vh }
+    h1 { margin: 0 0 4px; font-size: 1.1rem }
+    .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px }
+    .sub a { color: var(--muted) }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin-bottom: 16px;
+    }
+    .controls label { font-size: 0.85rem; color: var(--muted); display: flex; flex-direction: column; gap: 4px }
+    .controls select, .controls input[type=range] {
+      background: #0a0a0c;
+      color: var(--fg);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 0.95rem;
+      min-height: 36px;
+    }
+    .controls input[type=range] { padding: 0; min-width: 160px }
+    .controls .val { color: var(--fg); font-variant-numeric: tabular-nums; min-width: 3em; display: inline-block; text-align: right }
+    .controls button {
+      background: var(--accent); color: #fff; border: 0; padding: 8px 14px;
+      border-radius: 6px; cursor: pointer; font-weight: 600; min-height: 36px;
+    }
+    .controls button.muted { background: #444 }
+
+    .stage {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 600px) {
+      .stage { grid-template-columns: repeat(2, 1fr) }
+    }
+    .tower {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .tower .name { font-size: 0.85rem; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase }
+    .tower .lamp {
+      width: 100%;
+      aspect-ratio: 1 / 2;
+      max-height: 320px;
+      border-radius: 12px;
+      background: #000;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.04);
+      transition: box-shadow 0.05s linear;
+    }
+    .tower .ch {
+      font-size: 0.7rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-family: ui-monospace, Menlo, monospace;
+      width: 100%;
+      text-align: center;
+    }
+
+    .legend {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .legend strong { color: var(--fg) }
+    code { background: #0a0a0c; padding: 1px 6px; border-radius: 4px; color: var(--fg) }
+  </style>
+</head>
+<body>
+  <h1>DMX Fire — Theme Simulator</h1>
+  <p class='sub'>
+    Dev-only preview. Not part of the firmware web UI. <a href='/'>&larr; back to config preview</a>
+  </p>
+
+  <div class='controls'>
+    <label>
+      Theme
+      <select id='themeSel'>
+        <option value='green'>Green fire</option>
+        <option value='blue'>Blue fire</option>
+        <option value='fire'>Natural fire</option>
+        <option value='simon'>Simon (rotating)</option>
+        <option value='rainbow'>Rainbow</option>
+        <option value='warm_white'>Warm white (chill)</option>
+        <option value='bright_white'>Bright white</option>
+        <option value='candle'>Candle light</option>
+      </select>
+    </label>
+    <label>
+      Brightness <span class='val' id='brightVal'>128</span>
+      <input type='range' id='brightness' min='0' max='255' value='128'>
+    </label>
+    <label>
+      Theme speed (%) <span class='val' id='speedVal'>100</span>
+      <input type='range' id='speed' min='10' max='400' value='100'>
+    </label>
+    <button id='playPause'>Pause</button>
+    <button id='applyBtn' title='POST target=all to /set'>Push to all towers &rarr;</button>
+    <span id='applyStatus' style='font-size:0.8rem;color:var(--muted)'></span>
+  </div>
+
+  <div class='stage' id='stage'>
+    <div class='tower'>
+      <div class='name'>Tower 0</div>
+      <div class='lamp' id='lamp0'></div>
+      <div class='ch' id='ch0'>R=0 G=0 B=0 W=0</div>
+    </div>
+    <div class='tower'>
+      <div class='name'>Tower 1</div>
+      <div class='lamp' id='lamp1'></div>
+      <div class='ch' id='ch1'>R=0 G=0 B=0 W=0</div>
+    </div>
+    <div class='tower'>
+      <div class='name'>Tower 2</div>
+      <div class='lamp' id='lamp2'></div>
+      <div class='ch' id='ch2'>R=0 G=0 B=0 W=0</div>
+    </div>
+    <div class='tower'>
+      <div class='name'>Tower 3</div>
+      <div class='lamp' id='lamp3'></div>
+      <div class='ch' id='ch3'>R=0 G=0 B=0 W=0</div>
+    </div>
+  </div>
+
+  <div class='legend'>
+    <strong>Note:</strong> rendering here is a JS reimplementation of the firmware theme functions. Keep
+    <code>renderTheme()</code> in this file in lock-step with the firmware's theme renderer (see <code>Test_Button_DMX/themes.cpp</code> once /web-sync lands), otherwise this preview will lie.
+    Fire-flash themes use the 800 ms ON / 3200 ms OFF idle cycle; others render continuously.
+  </div>
+
+  <script>
+    // -- Gradient palettes mirroring Test_Button_DMX/palettes.cpp --
+    // Each entry: [index 0-255, R, G, B] — linear interpolation between entries.
+    var PALETTES = {
+      fire: [
+        [30,  255, 255,   0],
+        [65,  255,   0,   0],
+        [225, 255, 255,   0],
+        [255, 255, 255, 255]
+      ],
+      green: [
+        [0,     0,  32,   0],
+        [32,    0,  70,   0],
+        [190,  57, 255,  20],
+        [255, 255, 255, 255]
+      ],
+      blue: [
+        [0,     0,   0,   0],
+        [32,    0,   0,  70],
+        [128,  20,  57, 255],
+        [255, 255, 255, 255]
+      ]
+    };
+
+    function sampleGradient(grad, idx) {
+      // Find the two stops bracketing idx and lerp.
+      var prev = grad[0];
+      for (var i = 1; i < grad.length; i++) {
+        var cur = grad[i];
+        if (idx <= cur[0]) {
+          var span = cur[0] - prev[0] || 1;
+          var t = (idx - prev[0]) / span;
+          return {
+            r: Math.round(prev[1] + (cur[1] - prev[1]) * t),
+            g: Math.round(prev[2] + (cur[2] - prev[2]) * t),
+            b: Math.round(prev[3] + (cur[3] - prev[3]) * t)
+          };
+        }
+        prev = cur;
+      }
+      return { r: prev[1], g: prev[2], b: prev[3] };
+    }
+
+    // -- Simon: 4 colors, rotating assignment. tower i at beat b -> color[(i - b + 4) % 4]
+    var SIMON = [
+      { r: 255, g:   0, b:   0 },  // red
+      { r:   0, g:   0, b: 255 },  // blue
+      { r: 255, g: 220, b:   0 },  // yellow
+      { r:   0, g: 200, b:   0 }   // green
+    ];
+    function simonColor(towerIdx, nowMs) {
+      var beat = Math.floor(nowMs / 1000);
+      return SIMON[((towerIdx - beat) % 4 + 4) % 4];
+    }
+
+    // -- Rainbow: rotate hue across time, per-tower offset 90 deg --
+    function hsvToRgb(h, s, v) {
+      // h, s, v in [0..1]
+      var i = Math.floor(h * 6);
+      var f = h * 6 - i;
+      var p = v * (1 - s);
+      var q = v * (1 - f * s);
+      var t = v * (1 - (1 - f) * s);
+      var r, g, b;
+      switch (i % 6) {
+        case 0: r = v; g = t; b = p; break;
+        case 1: r = q; g = v; b = p; break;
+        case 2: r = p; g = v; b = t; break;
+        case 3: r = p; g = q; b = v; break;
+        case 4: r = t; g = p; b = v; break;
+        default: r = v; g = p; b = q;
+      }
+      return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+    }
+    function rainbowColor(towerIdx, nowMs) {
+      var hue = ((nowMs / 8000) + towerIdx * 0.25) % 1.0;
+      return hsvToRgb(hue, 1.0, 1.0);
+    }
+
+    // -- Candle: warm white base + per-tower pseudo-random flicker --
+    // Cheap "Perlin-ish" smoothed noise so we don't pull in a library.
+    function flicker(seed, t) {
+      // Two summed sines at incommensurate periods feel candle-like.
+      var a = Math.sin(t * 0.013 + seed * 7.3);
+      var b = Math.sin(t * 0.027 + seed * 2.1);
+      var c = Math.sin(t * 0.059 + seed * 11.7);
+      var v = (a + b * 0.5 + c * 0.25) / 1.75;
+      return (v + 1) / 2; // 0..1
+    }
+
+    // -- Main: turn (theme, towerIdx, nowMs, brightness) into {r,g,b,w,on}
+    function renderTheme(theme, towerIdx, nowMs, brightness) {
+      var scale = brightness / 255;
+
+      if (theme === 'green' || theme === 'blue' || theme === 'fire') {
+        // 4 s cycle, 800 ms ON, then dark.
+        var phase = nowMs % 4000;
+        if (phase >= 800) return { r: 0, g: 0, b: 0, w: 0, on: false };
+        // Sample at a slowly-advancing index (mirror firmware's paletteIndex++)
+        var idx = Math.floor((nowMs / 20)) & 0xff;
+        var c = sampleGradient(PALETTES[theme], idx);
+        return {
+          r: Math.round(c.r * scale),
+          g: Math.round(c.g * scale),
+          b: Math.round(c.b * scale),
+          w: brightness,
+          on: true
+        };
+      }
+
+      if (theme === 'simon') {
+        var c = simonColor(towerIdx, nowMs);
+        return {
+          r: Math.round(c.r * scale),
+          g: Math.round(c.g * scale),
+          b: Math.round(c.b * scale),
+          w: 0,
+          on: true
+        };
+      }
+
+      if (theme === 'rainbow') {
+        var c = rainbowColor(towerIdx, nowMs);
+        return {
+          r: Math.round(c.r * scale),
+          g: Math.round(c.g * scale),
+          b: Math.round(c.b * scale),
+          w: 0,
+          on: true
+        };
+      }
+
+      if (theme === 'warm_white') {
+        // Dim warm — bias red, lower brightness ceiling for chill feel.
+        var dim = Math.round(brightness * 0.45);
+        return { r: dim, g: Math.round(dim * 0.55), b: Math.round(dim * 0.18), w: dim, on: true };
+      }
+
+      if (theme === 'bright_white') {
+        return { r: brightness, g: brightness, b: brightness, w: brightness, on: true };
+      }
+
+      if (theme === 'candle') {
+        var f = flicker(towerIdx, nowMs);    // 0..1
+        var lvl = brightness * (0.55 + f * 0.45);  // 55-100% of brightness
+        var r = Math.round(lvl);
+        var g = Math.round(lvl * 0.55);
+        var b = Math.round(lvl * 0.18);
+        var w = Math.round(lvl);
+        return { r: r, g: g, b: b, w: w, on: true };
+      }
+
+      return { r: 0, g: 0, b: 0, w: 0, on: false };
+    }
+
+    // -- Render loop --
+    var themeSel    = document.getElementById('themeSel');
+    var brightInput = document.getElementById('brightness');
+    var brightVal   = document.getElementById('brightVal');
+    var speedInput  = document.getElementById('speed');
+    var speedVal    = document.getElementById('speedVal');
+    var playBtn     = document.getElementById('playPause');
+
+    var lamps = [0,1,2,3].map(function (i) { return document.getElementById('lamp' + i); });
+    var chs   = [0,1,2,3].map(function (i) { return document.getElementById('ch' + i); });
+
+    var simNowMs = 0;
+    var lastFrameMs = performance.now();
+    var playing = true;
+
+    function lampColor(r, g, b, w, on) {
+      // Composite: warm-white channel adds a yellow-ish tint at high w.
+      var rr = Math.min(255, r + Math.round(w * 0.7));
+      var gg = Math.min(255, g + Math.round(w * 0.55));
+      var bb = Math.min(255, b + Math.round(w * 0.30));
+      if (!on) return { bg: '#050505', glow: 'none' };
+      var bg = 'rgb(' + rr + ',' + gg + ',' + bb + ')';
+      var glowAmount = Math.max(rr, gg, bb);
+      var glow = '0 0 ' + (10 + glowAmount / 8) + 'px ' + (8 + glowAmount / 16) + 'px ' + bg;
+      return { bg: bg, glow: 'inset 0 0 0 2px rgba(255,255,255,0.04), ' + glow };
+    }
+
+    function tick() {
+      var now = performance.now();
+      if (playing) {
+        var dt = now - lastFrameMs;
+        var speed = parseInt(speedInput.value, 10) / 100;
+        simNowMs += dt * speed;
+      }
+      lastFrameMs = now;
+
+      var theme = themeSel.value;
+      var brightness = parseInt(brightInput.value, 10);
+
+      for (var i = 0; i < 4; i++) {
+        var f = renderTheme(theme, i, simNowMs, brightness);
+        var lc = lampColor(f.r, f.g, f.b, f.w, f.on);
+        lamps[i].style.background = lc.bg;
+        lamps[i].style.boxShadow = lc.glow;
+        chs[i].textContent = 'R=' + f.r + ' G=' + f.g + ' B=' + f.b + ' W=' + f.w;
+      }
+
+      requestAnimationFrame(tick);
+    }
+
+    brightInput.addEventListener('input', function () { brightVal.textContent = brightInput.value; });
+    speedInput.addEventListener('input', function () { speedVal.textContent = speedInput.value; });
+    playBtn.addEventListener('click', function () {
+      playing = !playing;
+      playBtn.textContent = playing ? 'Pause' : 'Play';
+      playBtn.classList.toggle('muted', !playing);
+    });
+
+    // ---- Push current preview to the device (or mock) as target=all ----
+    // POSTs the same theme/brightness/speed/flameLevel to /set that the main
+    // web UI's "Apply to All Towers" form does. Lets the operator preview an
+    // animation and then commit it without switching tabs.
+    var applyBtn = document.getElementById('applyBtn');
+    var applyStatus = document.getElementById('applyStatus');
+    applyBtn.addEventListener('click', function () {
+      var fd = new FormData();
+      fd.append('target', 'all');
+      fd.append('theme', themeSel.value);
+      fd.append('brightness', brightInput.value);
+      fd.append('speed', speedInput.value);
+      fd.append('flameLevel', '255');  // Not configurable in the simulator; keep default.
+      applyBtn.disabled = true;
+      applyStatus.textContent = 'pushing...';
+      fetch('/set', { method: 'POST', body: fd }).then(function (r) {
+        applyStatus.textContent = r.ok ? 'pushed at ' + new Date().toLocaleTimeString() : 'error ' + r.status;
+      }).catch(function (e) {
+        applyStatus.textContent = 'failed: ' + e.message;
+      }).finally(function () {
+        applyBtn.disabled = false;
+      });
+    });
+
+    tick();
+  </script>
+</body>
+</html>

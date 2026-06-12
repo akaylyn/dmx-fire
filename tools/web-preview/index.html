@@ -387,7 +387,10 @@
 </head>
 <body>
   <header>
-    <h1>DMX Fire</h1>
+    <!-- DEV-ONLY: the header h1 row is only rendered when served by the local mock
+         server. The link to /simulator must NOT be ported to firmware web.cpp by
+         /web-sync — strip between the DEV-ONLY markers below. -->
+    <h1>DMX Fire <!-- DEV-ONLY-START --><a href='/simulator' style='float:right;font-size:0.75rem;font-weight:500;color:var(--muted);text-decoration:none;margin-top:4px'>Theme simulator &rarr;</a><!-- DEV-ONLY-END --></h1>
     <nav class='tabs' id='tabs' role='tablist'>
       <button type='button' class='active' data-tab='test-fire' role='tab'>Test Fire</button>
       <button type='button' data-tab='button' role='tab'>Button Config</button>
@@ -502,14 +505,23 @@
           <legend>Apply to All Towers</legend>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='all'>
-            <label>Palette<select name='palette'>
+            <label>Theme<select name='theme'>
               <option value='green' selected>Green fire</option>
               <option value='blue'>Blue fire</option>
               <option value='fire'>Natural fire</option>
+              <option value='simon'>Simon (rotating)</option>
+              <option value='rainbow'>Rainbow</option>
+              <option value='warm_white'>Warm white</option>
+              <option value='bright_white'>Bright white</option>
+              <option value='candle'>Candle light</option>
             </select></label>
             <label>Brightness<div class='sr'>
               <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>128</span>
+            </div></label>
+            <label>Speed (%)<div class='sr'>
+              <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>100</span>
             </div></label>
             <label>Flame level<div class='sr'>
               <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
@@ -530,14 +542,23 @@
               <input type='checkbox' name='connected' id='c0' checked>
               <label for='c0'>Connected</label>
             </div>
-            <label>Palette<select name='palette'>
+            <label>Theme<select name='theme'>
               <option value='green' selected>Green fire</option>
               <option value='blue'>Blue fire</option>
               <option value='fire'>Natural fire</option>
+              <option value='simon'>Simon (rotating)</option>
+              <option value='rainbow'>Rainbow</option>
+              <option value='warm_white'>Warm white</option>
+              <option value='bright_white'>Bright white</option>
+              <option value='candle'>Candle light</option>
             </select></label>
             <label>Brightness<div class='sr'>
               <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>128</span>
+            </div></label>
+            <label>Speed (%)<div class='sr'>
+              <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>100</span>
             </div></label>
             <label>Flame level<div class='sr'>
               <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
@@ -557,14 +578,23 @@
               <input type='checkbox' name='connected' id='c1' checked>
               <label for='c1'>Connected</label>
             </div>
-            <label>Palette<select name='palette'>
+            <label>Theme<select name='theme'>
               <option value='green' selected>Green fire</option>
               <option value='blue'>Blue fire</option>
               <option value='fire'>Natural fire</option>
+              <option value='simon'>Simon (rotating)</option>
+              <option value='rainbow'>Rainbow</option>
+              <option value='warm_white'>Warm white</option>
+              <option value='bright_white'>Bright white</option>
+              <option value='candle'>Candle light</option>
             </select></label>
             <label>Brightness<div class='sr'>
               <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>128</span>
+            </div></label>
+            <label>Speed (%)<div class='sr'>
+              <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>100</span>
             </div></label>
             <label>Flame level<div class='sr'>
               <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
@@ -584,14 +614,23 @@
               <input type='checkbox' name='connected' id='c2' checked>
               <label for='c2'>Connected</label>
             </div>
-            <label>Palette<select name='palette'>
+            <label>Theme<select name='theme'>
               <option value='green' selected>Green fire</option>
               <option value='blue'>Blue fire</option>
               <option value='fire'>Natural fire</option>
+              <option value='simon'>Simon (rotating)</option>
+              <option value='rainbow'>Rainbow</option>
+              <option value='warm_white'>Warm white</option>
+              <option value='bright_white'>Bright white</option>
+              <option value='candle'>Candle light</option>
             </select></label>
             <label>Brightness<div class='sr'>
               <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>128</span>
+            </div></label>
+            <label>Speed (%)<div class='sr'>
+              <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>100</span>
             </div></label>
             <label>Flame level<div class='sr'>
               <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
@@ -611,14 +650,23 @@
               <input type='checkbox' name='connected' id='c3' checked>
               <label for='c3'>Connected</label>
             </div>
-            <label>Palette<select name='palette'>
+            <label>Theme<select name='theme'>
               <option value='green' selected>Green fire</option>
               <option value='blue'>Blue fire</option>
               <option value='fire'>Natural fire</option>
+              <option value='simon'>Simon (rotating)</option>
+              <option value='rainbow'>Rainbow</option>
+              <option value='warm_white'>Warm white</option>
+              <option value='bright_white'>Bright white</option>
+              <option value='candle'>Candle light</option>
             </select></label>
             <label>Brightness<div class='sr'>
               <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>128</span>
+            </div></label>
+            <label>Speed (%)<div class='sr'>
+              <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>100</span>
             </div></label>
             <label>Flame level<div class='sr'>
               <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">

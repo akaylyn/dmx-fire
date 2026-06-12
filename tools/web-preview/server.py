@@ -35,6 +35,7 @@ PORT = 8123
 HOST = "127.0.0.1"
 HERE = Path(__file__).resolve().parent
 INDEX_HTML = HERE / "index.html"
+SIMULATOR_HTML = HERE / "simulator.html"  # dev-only animation preview, not part of firmware UI
 
 # Injected into every served HTML response. Polls /__preview/mtime every 500 ms
 # and reloads the page when index.html changes on disk, so editing the file in
@@ -68,11 +69,13 @@ STATE = {
         "machineGunBurstMs": 200,
     },
     "confluence": {"connected": True, "fireLevel": 255},
+    # `speed` is a percentage where 100 = normal. Scales time-based theme
+    # behaviour (flash cycle, Simon beat, rainbow hue rotation, candle flicker).
     "towers": [
-        {"connected": True, "palette": "green", "brightness": 128, "flameLevel": 255},
-        {"connected": True, "palette": "green", "brightness": 128, "flameLevel": 255},
-        {"connected": True, "palette": "green", "brightness": 128, "flameLevel": 255},
-        {"connected": True, "palette": "green", "brightness": 128, "flameLevel": 255},
+        {"connected": True, "theme": "green", "brightness": 128, "speed": 100, "flameLevel": 255},
+        {"connected": True, "theme": "green", "brightness": 128, "speed": 100, "flameLevel": 255},
+        {"connected": True, "theme": "green", "brightness": 128, "speed": 100, "flameLevel": 255},
+        {"connected": True, "theme": "green", "brightness": 128, "speed": 100, "flameLevel": 255},
     ],
     "morse": {"unitMs": 150, "playing": False, "text": ""},
 }
@@ -134,8 +137,9 @@ def update_config(target: str, args: dict[str, str]) -> None:
         STATE["confluence"]["fireLevel"] = int(args.get("fireLevel", 0))
     elif target == "all":
         for t in STATE["towers"]:
-            t["palette"] = args.get("palette", "green")
+            t["theme"] = args.get("theme", "green")
             t["brightness"] = int(args.get("brightness", 128))
+            t["speed"] = int(args.get("speed", 100))
             t["flameLevel"] = int(args.get("flameLevel", 255))
     else:
         try:
@@ -144,8 +148,9 @@ def update_config(target: str, args: dict[str, str]) -> None:
             return
         if 0 <= idx < len(STATE["towers"]):
             STATE["towers"][idx]["connected"] = "connected" in args
-            STATE["towers"][idx]["palette"] = args.get("palette", "green")
+            STATE["towers"][idx]["theme"] = args.get("theme", "green")
             STATE["towers"][idx]["brightness"] = int(args.get("brightness", 128))
+            STATE["towers"][idx]["speed"] = int(args.get("speed", 100))
             STATE["towers"][idx]["flameLevel"] = int(args.get("flameLevel", 255))
 
 
@@ -229,11 +234,32 @@ class Handler(BaseHTTPRequestHandler):
                 body = body + RELOAD_SNIPPET
             self._send(200, body, "text/html; charset=utf-8")
         elif self.path == "/__preview/mtime":
+            # Aggregate mtime so the live-reload poller fires for either the
+            # firmware UI preview OR the simulator (whichever is open).
             try:
-                mtime = INDEX_HTML.stat().st_mtime_ns
+                m1 = INDEX_HTML.stat().st_mtime_ns
             except FileNotFoundError:
-                mtime = 0
-            self._send(200, str(mtime).encode("ascii"), "text/plain")
+                m1 = 0
+            try:
+                m2 = SIMULATOR_HTML.stat().st_mtime_ns
+            except FileNotFoundError:
+                m2 = 0
+            self._send(200, str(max(m1, m2)).encode("ascii"), "text/plain")
+        elif self.path == "/simulator" or self.path.startswith("/simulator?"):
+            log(f"GET /simulator  client={self.client_address[0]}")
+            try:
+                body = SIMULATOR_HTML.read_bytes()
+            except FileNotFoundError:
+                self._send(500, b"simulator.html missing", "text/plain")
+                return
+            # Inject the same live-reload poller so simulator edits also refresh.
+            lower = body.lower()
+            idx = lower.rfind(b"</body>")
+            if idx >= 0:
+                body = body[:idx] + RELOAD_SNIPPET + body[idx:]
+            else:
+                body = body + RELOAD_SNIPPET
+            self._send(200, body, "text/html; charset=utf-8")
         elif self.path == "/api/state":
             with LOCK:
                 body = build_state_json()

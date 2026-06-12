@@ -313,6 +313,9 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 STATE["morse"]["playing"] = False
             self._send(200)
+        elif self.path == "/api/captive/dismiss":
+            log("POST /api/captive/dismiss")
+            self._send(204)
         else:
             self._send(404, b"not found")
 

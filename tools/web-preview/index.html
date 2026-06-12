@@ -344,6 +344,95 @@
       margin: 4px 0 0;
     }
 
+    /* "Open in real browser" escape hatch from the captive-portal webview.
+       Subtle secondary action — not red, not competing with the fire button. */
+    .escape-portal {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px dashed var(--line);
+      text-align: center;
+    }
+    .escape-portal p {
+      margin: 0 0 10px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .escape-portal button {
+      display: inline-block;
+      width: auto;
+      min-height: var(--tap);
+      padding: 10px 18px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      background: var(--field-bg);
+      color: var(--fg);
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .escape-portal button:active { opacity: 0.85 }
+
+    /* Modal overlay shown after the user hits "Open in real browser". */
+    .modal[hidden] { display: none }
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      padding-top: calc(24px + env(safe-area-inset-top));
+      padding-bottom: calc(24px + env(safe-area-inset-bottom));
+      z-index: 50;
+    }
+    .modal-card {
+      background: var(--bg);
+      color: var(--fg);
+      border-radius: 14px;
+      padding: 20px 18px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    }
+    .modal-card h3 {
+      margin: 0 0 12px;
+      font-size: 1.1rem;
+    }
+    .modal-card ol {
+      margin: 0 0 12px;
+      padding-left: 22px;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    .modal-card ol li { margin-bottom: 8px }
+    .modal-card ol li:last-child { margin-bottom: 0 }
+    .modal-card code {
+      background: var(--field-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .modal-card .modal-note {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: 0 0 14px;
+    }
+    .modal-card button {
+      display: block;
+      width: 100%;
+      min-height: var(--tap);
+      padding: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .modal-card button:active { opacity: 0.85 }
+
     /* Morse "Go" / "Stop" pair */
     .btn-row {
       display: flex;
@@ -412,8 +501,26 @@
         </div>
         <button type='button' id='testFireBtn' class='disarmed'>DISARMED<small>open the cover above to arm</small></button>
         <p class='testfire-hint'>Mirrors the physical fire button. Release to stop. Cover resets to closed on every page load.</p>
+        <div class='escape-portal'>
+          <p>Captive portal feels cramped?</p>
+          <button type='button' id='openInBrowserBtn'>Open in real browser</button>
+        </div>
       </div>
     </section>
+
+    <!-- Captive-portal escape modal: shown after the user taps "Open in real browser". -->
+    <div class='modal' id='browserEscapeModal' hidden role='dialog' aria-modal='true' aria-labelledby='browserEscapeTitle'>
+      <div class='modal-card' role='document'>
+        <h3 id='browserEscapeTitle'>Open in your browser</h3>
+        <ol>
+          <li>Close this captive portal &mdash; iOS: tap <strong>Cancel</strong> at the top, then <em>Use Without Internet</em>. Android: tap <strong>&times;</strong> or <em>Use this network as is</em>.</li>
+          <li>Open Safari or Chrome.</li>
+          <li>Visit <code>http://192.168.4.1</code></li>
+        </ol>
+        <p class='modal-note'>Your fire controls keep running &mdash; this just switches you to a normal browser tab.</p>
+        <button type='button' id='browserEscapeClose'>Got it</button>
+      </div>
+    </div>
 
     <!-- ===== BUTTON CONFIG ===== -->
     <section class='tab' data-tab='button' role='tabpanel' hidden>
@@ -830,6 +937,30 @@
       });
       stop.addEventListener('click', function () {
         fetch('/api/morse/stop', { method: 'POST' });
+      });
+    })();
+
+    // ---- "Open in real browser" escape from the captive-portal webview ----
+    // Tells the firmware to start returning success responses to OS captive
+    // probes (so iOS/Android auto-close the popup), then shows instructions
+    // for opening Safari/Chrome. The modal still appears if the POST fails —
+    // the instructions are useful even without the backend trick.
+    (function () {
+      var btn = document.getElementById('openInBrowserBtn');
+      var modal = document.getElementById('browserEscapeModal');
+      var closeBtn = document.getElementById('browserEscapeClose');
+      if (!btn || !modal || !closeBtn) return;
+
+      function show() { modal.hidden = false; }
+      function hide() { modal.hidden = true; }
+
+      btn.addEventListener('click', function () {
+        fetch('/api/captive/dismiss', { method: 'POST' })
+          .then(show, show);
+      });
+      closeBtn.addEventListener('click', hide);
+      modal.addEventListener('click', function (e) {
+        if (e.target === modal) hide();
       });
     })();
   </script>

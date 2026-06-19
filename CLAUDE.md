@@ -69,17 +69,21 @@ python3 -m venv .venv && source .venv/bin/activate && pip install -r tests/requi
 
 ## Architecture
 
-This is an Arduino sketch (`Test_Button_DMX/`) running on an M5AtomS3 Lite (ESP32-S3). It controls DMX512 lighting on 4 RGBW towers and a propane solenoid (Confluence) over a 64-channel universe at 50 Hz, with a web config UI served from the device's WiFi AP at `192.168.4.1`.
+This is an Arduino sketch (`Test_Button_DMX/`) running on an M5AtomS3 Lite (ESP32-S3). It controls DMX512 lighting on 4 towers and a propane solenoid (Confluence) over a 64-channel universe at 50 Hz, with a web config UI served from the device's WiFi AP at `192.168.4.1`.
 
 ### DMX Universe Layout
 
+Each tower has **two fixtures** sharing one config: an accumulator **decoder** (RGB strips + fire valve on CH4) and an **uplight** (LaluceNatz LL960S in 11-channel mode — full theme colour + a dedicated white channel).
+
 ```
-Confluence:  CH  1– 4  (CH4 = solenoid valve)
-Tower 0:     CH  5–19  (decoder CH5–8 RGBW, strobe CH9–19)
-Tower 1:     CH 20–34
-Tower 2:     CH 35–49
-Tower 3:     CH 50–64
+Confluence:  CH  1– 4  (CH4 = central solenoid valve)
+Tower 0:     CH  5–19  (decoder A005: RGB strips CH5–7 + FIRE CH8; uplight A009: CH9–19)
+Tower 1:     CH 20–34  (decoder A020 fire=CH23; uplight A024)
+Tower 2:     CH 35–49  (decoder A035 fire=CH38; uplight A039)
+Tower 3:     CH 50–64  (decoder A050 fire=CH53; uplight A054)
 ```
+
+**Fire and white are independent channels.** The decoder's CH4 is the fire valve (only opened during `FIRE_ACTIVE`); the uplight's white channel (CH11 of its block) is driven by themes/end-cue. Firing never lights white; white never opens a valve. Accumulator strip RGB is capped (~50%, `STRIP_BRIGHTNESS_PCT` in `towers.cpp`) to protect the old, power-limited strips; the uplight runs full brightness.
 
 ### Key Subsystems
 
@@ -88,19 +92,21 @@ Tower 3:     CH 50–64
 - Mode 0 (FIREBALL): runs full `fireDurationMs`; mode 1 (PARTY): stops on release; mode 2 (MACHINE_GUN): pulses solenoid on/off while held
 - Cooldown lockout prevents rapid solenoid re-fire
 
-**Towers (`towers.h/.cpp`)** — per-tower config (palette, brightness, flameLevel); writes to DMX decoder + strobe each tick. Idle behavior: 800 ms ON / 3200 ms OFF palette cycle.
+**Towers (`towers.h/.cpp`)** — per-tower config (theme, brightness, speed, flameLevel, connected); `towerWrite()` emits the decoder block (capped strip RGB + fire on CH4) and the uplight block (full RGB + white) each tick. Idle visuals come from `themeRender()`; `flameLevel` drives the fire valve during `FIRE_ACTIVE`.
 
-**Confluence (`confluence.h/.cpp`)** — solenoid config; only CH4 matters. Fires when FSM is `FIRE_ACTIVE`, zero otherwise.
+**Themes (`themes.h/.cpp`)** — `themeRender(name, index, nowMs, brightness, speedPct)` returns a `TowerState` (RGB + white + strobe control) per tower per frame. Eight themes: gradient fire (`green`/`blue`/`fire`, 800 ms ON / 3200 ms OFF flash cycle) and procedural (`simon`, `rainbow`, `warm_white`, `bright_white`, `candle`). `speedPct` (10–400, 100 = normal) scales time. White themes drive the uplight white channel. Mirrored in `tools/web-preview/simulator.html`'s `renderTheme()` — keep in lock-step.
+
+**Confluence (`confluence.h/.cpp`)** — central solenoid config; only CH4 matters. Fires when FSM is `FIRE_ACTIVE`, zero otherwise. Per-tower decoder CH4 valves fire in parallel.
 
 **DMX shadow buffer (`dmx.h/.cpp`)** — `dmxLastFrame[64]` mirrors every byte written; exposed via `/api/state` for test assertions.
 
-**Web server (`web.cpp`)** — serves config HTML form + REST API:
-- `GET /api/state` — JSON snapshot of FSM state + full DMX frame
+**Web server (`web.cpp`)** — serves a tabbed mobile config UI + REST API:
+- `GET /api/state` — JSON snapshot: `boot_id`, FSM state, per-tower config (`theme`/`brightness`/`speed`/`flameLevel`), full DMX frame
 - `POST /api/button/press|release|reset` — virtual button injection for tests
+- `POST /api/morse|/api/morse/stop` — Morse playback
+- `POST /api/captive/dismiss` — turn off the captive-portal redirect so the OS popup closes and the operator can switch to a real browser (RAM-only flag, resets each boot). OS probe URLs (`/hotspot-detect.html`, `/generate_204`, `/ncsi.txt`, …) return success once dismissed.
 
-**Storage (`storage.cpp`)** — NVS via ESP32 `Preferences`; loaded at `setup()`, saved on config change.
-
-**Palettes (`palettes.h/.cpp`)** — three FastLED palettes (green fire, blue fire, natural fire); `palFromName(String)` maps config strings to `CRGBPalette256`.
+**Storage (`storage.cpp`)** — NVS via ESP32 `Preferences`; loaded at `setup()`, saved on config change. Per-tower theme key is `t<N>h`; speed is `t<N>s`.
 
 ### Test Harness
 

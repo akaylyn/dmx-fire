@@ -36,37 +36,44 @@ All hardware used in this project, with links to offline documentation and origi
 
 ## DMX channel assignment (this project)
 
-4 towers, ganged (same signal). Each tower occupies 15 channels:
+The central propane solenoid (Confluence) occupies channels 1–4. Each of the 4 towers then occupies a contiguous 15-channel block: a 4-channel **accumulator decoder** (RGB strips + fire valve) followed by an 11-channel **uplight** (LaluceNatz LL960S in 11-ch mode).
 
 ```
-Tower 0: ch  1–15
-Tower 1: ch 16–30
-Tower 2: ch 31–45
-Tower 3: ch 46–60
+Confluence: ch  1–4    (ch 4 = central solenoid valve)
+Tower 0:    ch  5–19
+Tower 1:    ch 20–34
+Tower 2:    ch 35–49
+Tower 3:    ch 50–64
 ```
 
-**Per tower** (base = towerIndex × 15):
+**Per tower** (base = 4 + towerIndex × 15):
 
-| Offset | DMX CH | Device | Signal | Notes |
-|--------|--------|--------|--------|-------|
-| +1 | 1 | Decoder | Red | |
-| +2 | 2 | Decoder | Green | |
-| +3 | 3 | Decoder | Blue | |
-| +4 | 4 | Decoder | White | Level controlled by brightness |
-| +5 | 1 | Strobe | Master dim | Always 255 (full) |
-| +6 | 2 | Strobe | RGB strobe speed | 0 idle, 128 when button held |
-| +7 | 3 | Strobe | RGB mode | Hardcoded 0 (direct colour) |
-| +8 | 4 | Strobe | RGB mode speed | Hardcoded 0 |
-| +9 | 5 | Strobe | Red | |
-| +10 | 6 | Strobe | Green | |
-| +11 | 7 | Strobe | Blue | |
-| +12 | 8 | Strobe | White strobe speed | 0 idle, 128 when button held |
-| +13 | 9 | Strobe | White mode | Hardcoded 0 (direct) |
-| +14 | 10 | Strobe | White mode speed | Hardcoded 0 |
-| +15 | 11 | Strobe | White dimmer | Level controlled by brightness |
+| Offset | Fixture CH | Device | Signal | Notes |
+|--------|-----------|--------|--------|-------|
+| +1 | 1 | Decoder | Red (strip) | Capped to `STRIP_BRIGHTNESS_PCT` (≈50%) — old/power-limited strips |
+| +2 | 2 | Decoder | Green (strip) | Capped |
+| +3 | 3 | Decoder | Blue (strip) | Capped |
+| +4 | 4 | Decoder | **FIRE valve** | Propane only. Driven by `flameLevel` during `FIRE_ACTIVE`, 0 otherwise. **Never carries white.** |
+| +5 | 1 | Uplight | Master dim | Always 255 (full) |
+| +6 | 2 | Uplight | RGB strobe speed | 1 = open/steady (≠0, or LL960S blanks RGB) |
+| +7 | 3 | Uplight | RGB mode | Hardcoded 0 (direct colour) |
+| +8 | 4 | Uplight | RGB mode speed | Hardcoded 0 |
+| +9 | 5 | Uplight | Red (full) | Theme colour, full brightness |
+| +10 | 6 | Uplight | Green (full) | |
+| +11 | 7 | Uplight | Blue (full) | |
+| +12 | 8 | Uplight | White strobe speed | 0 (no strobe) |
+| +13 | 9 | Uplight | White mode | Hardcoded 0 (direct) |
+| +14 | 10 | Uplight | White mode speed | Hardcoded 0 |
+| +15 | 11 | Uplight | **White dimmer** | White themes / end-cue flash. **Independent of fire.** |
 
-Set each decoder to its tower's start address (1, 16, 31, 46).  
-Set each strobe to its tower's start address + 4 (5, 20, 35, 50).
+Set each accumulator decoder to its tower's start address (**A005, A020, A035, A050**).  
+Set each uplight to its tower's start address + 4 (**A009, A024, A039, A054**), 11-channel mode.
+
+The web UI prints these addresses per tower (in each Tower Configs sub-tab) so you can dial them in while looking at the page.
+
+### Fire vs. white independence
+
+The decoder's CH4 (fire valve) and the uplight's white channel are physically separate wires. This is deliberate: you can fire without lighting the towers white (fire during any colour theme), and you can send white without opening a valve (select `bright_white`/`warm_white`/`candle`, or the end-cue flash). The accumulator strips are RGB-only — to get "white" there you'd send full R+G+B, which overdraws the old supply, so the white themes drive the uplight's dedicated W channel instead and leave the strips dark.
 
 ---
 

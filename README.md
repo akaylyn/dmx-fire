@@ -1,6 +1,6 @@
 # dmx-fire
 
-DMX512 control over various systems, including flame effects.
+DMX512 control over flame effects and lighting. An M5AtomS3 Lite (ESP32-S3) drives a propane solenoid plus 4 towers (each an accumulator decoder + uplight) over a 64-channel universe at 50 Hz, with a tabbed mobile web UI served from the device's own WiFi AP.
 
 ## Hardware
 
@@ -42,29 +42,42 @@ Edit `secrets.h`:
 
 ```bash
 arduino-cli compile --fqbn m5stack:esp32:m5stack_atoms3 Test_Button_DMX
-arduino-cli upload  --fqbn m5stack:esp32:m5stack_atoms3 --port <port> Test_Button_DMX
+scripts/flash.sh    # compiles + flashes block-by-block (see docs/spec-upload.md)
 ```
+
+> The ESP32-S3 USB-Serial/JTAG controller needs a block-by-block flash; use `scripts/flash.sh`, not a raw `arduino-cli upload`. Turn Bluetooth off first and use a data-capable USB cable. See `CLAUDE.md` for details.
 
 ## Web configuration
 
-Once running, the device broadcasts a WiFi access point using the credentials in `secrets.h`. Connect to it and navigate to `http://192.168.4.1` to configure:
+Once running, the device broadcasts a WiFi access point using the credentials in `secrets.h`. Joining it usually pops a captive-portal page automatically; otherwise open `http://192.168.4.1`. The UI is a tabbed mobile layout:
 
-- **Idle palette** — the colour palette used when the button is not held (green fire, blue fire, or natural fire)
-- **Idle brightness** — DMX output level when idle (0–255)
+- **Test Fire** — arm-cover-gated fire button (mirrors the physical button), plus an "Open in real browser" escape from the captive portal
+- **Button Config** — mode (Fireball / Party / Machine Gun), fire duration, machine-gun burst, cooldown, end cue
+- **Morse** — send a message as solenoid dots/dashes
+- **Confluence** — central propane solenoid (connected + fire level)
+- **Tower Configs** — per-tower (and apply-to-all) theme, brightness, speed, flame level; each sub-tab shows the DMX addresses to set
 
-## DMX channels
+Every control auto-saves to NVS on change; settings persist across power cycles.
 
-| Channel | Signal |
-|---------|--------|
-| 1 | Red |
-| 2 | Green |
-| 3 | Blue |
-| 4 | White strobe (active while button is held) |
+### Themes
+
+Per-tower idle visuals. Gradient fire (`green`, `blue`, `fire` — flash 800 ms on / 3200 ms off) and procedural (`simon` rotating colours, `rainbow`, `warm_white`, `bright_white`, `candle`). **Speed** (10–400%) scales the animation. Colour drives the uplight RGB (full) and accumulator strips (capped); white themes drive the uplight's dedicated white channel. See `docs/spec-themes.md`.
+
+## DMX universe (64 channels)
+
+Confluence on ch 1–4; each tower a 15-channel block (decoder + uplight). **Fire (decoder CH4) and white (uplight white channel) are independent** — fire without white, white without fire. Full channel map in `docs/hardware.md`.
+
+```
+Confluence: ch 1–4    (ch 4 = central valve)
+Tower 0:    ch 5–19    Tower 1: ch 20–34    Tower 2: ch 35–49    Tower 3: ch 50–64
+```
 
 ## Button behaviour
 
-| State | Palette | Brightness |
-|-------|---------|------------|
-| Idle | Web-configured | Web-configured |
-| Held | Blue fire | 255 (full) |
-| Released | Restores web-configured idle | — |
+| Mode | Behaviour |
+|------|-----------|
+| Fireball | Press → fires the full **fire duration**, ignores early release |
+| Party | Fires while held, stops on release (capped at fire duration) |
+| Machine Gun | Pulses the solenoid on/off every **burst** ms while held |
+
+Cooldown locks out re-fire for the configured duration. During `FIRE_ACTIVE` each tower's decoder CH4 valve opens (`flameLevel`) alongside the central confluence.

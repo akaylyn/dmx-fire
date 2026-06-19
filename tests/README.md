@@ -42,7 +42,7 @@ pytest tests/test_party_mode.py -v
 | File | What it tests |
 |---|---|
 | `test_state.py` | `/api/state` shape, defaults, uptime |
-| `test_config_per_tower.py` | Per-tower palette / brightness / flameLevel / connected round-trip |
+| `test_config_per_tower.py` | Per-tower theme / brightness / speed / flameLevel / connected round-trip |
 | `test_config_all_towers.py` | `target=all` applies to every tower |
 | `test_config_confluence.py` | Confluence connected toggle + fireLevel |
 | `test_config_button.py` | mode / fireDurationMs / cooldownMs / endCuePattern |

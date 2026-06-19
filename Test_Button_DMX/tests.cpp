@@ -33,12 +33,13 @@ static void testTowerConfig() {
   HEAD("Tower config (loaded from NVS)");
   bool anyConnected = false;
   for (uint8_t i = 0; i < NUM_TOWERS; i++) {
-    INFO("Tower %d: connected=%-5s  bright=%3d  flameLevel=%3d  pal=%s",
+    INFO("Tower %d: connected=%-5s  bright=%3d  speed=%3d%%  flameLevel=%3d  theme=%s",
          i,
          towerConfigs[i].connected ? "true" : "false",
          towerConfigs[i].bright,
+         towerConfigs[i].speed,
          towerConfigs[i].flameLevel,
-         towerConfigs[i].palName.c_str());
+         towerConfigs[i].themeName.c_str());
     if (towerConfigs[i].connected) anyConnected = true;
     if (!towerConfigs[i].connected)
       FAIL("Tower " + String(i) + " is marked disconnected — skipped in DMX loop");
@@ -133,14 +134,15 @@ static void testDmxVisual() {
   TowerState state = {};
   state.masterDim = 255;
   state.r = state.g = state.b = 255;
-  state.wDim = 255;
+  state.white = 255;   // uplight white channel
+  state.fire  = 0;     // NEVER open the propane valves during a boot diagnostic
 
   uint32_t deadline = millis() + 500;
   while (millis() < deadline) {
     for (uint8_t i = 0; i < NUM_TOWERS; i++) {
       towerWrite(i, state);
     }
-    confluenceWrite(0);  // don't open solenoid during test
+    confluenceWrite(0);  // don't open central solenoid during test
     dmxDevice.update();
     delay(20);
   }

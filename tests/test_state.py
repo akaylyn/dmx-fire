@@ -1,8 +1,12 @@
 """GET /api/state returns a sane shape with all expected sections."""
 
 
+VALID_THEMES = {"green", "blue", "fire", "simon", "rainbow", "warm_white", "bright_white", "candle"}
+
+
 def test_state_shape(device):
     s = device.get_state()
+    assert "boot_id" in s and isinstance(s["boot_id"], str) and len(s["boot_id"]) > 0
     assert "uptime_ms" in s and isinstance(s["uptime_ms"], int)
     assert s["uptime_ms"] >= 0
 
@@ -22,8 +26,9 @@ def test_state_shape(device):
     assert len(towers) == 4
     for t in towers:
         assert isinstance(t["connected"], bool)
-        assert t["palette"] in {"green", "blue", "fire"}
+        assert t["theme"] in VALID_THEMES
         assert 0 <= t["brightness"] <= 255
+        assert 10 <= t["speed"] <= 400
         assert 0 <= t["flameLevel"] <= 255
 
     dmx = s["dmx"]
@@ -43,6 +48,7 @@ def test_baseline_applied(device):
     assert s["confluence"]["fireLevel"] == 255
     for t in s["towers"]:
         assert t["connected"] is True
-        assert t["palette"] == "green"
+        assert t["theme"] == "green"
         assert t["brightness"] == 128
+        assert t["speed"] == 100
         assert t["flameLevel"] == 255

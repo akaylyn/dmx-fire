@@ -11,15 +11,20 @@
   firmware's themes; if you change the firmware rendering, mirror the change
   in renderTheme() below to keep the preview accurate.
 
-  Theme catalogue (matches Test_Button_DMX/palettes.cpp + new procedural):
+  Theme catalogue (matches Test_Button_DMX/themes.cpp themeRender()):
     green        — green-fire gradient with 800/3200 flash cycle
     blue         — blue-fire gradient with flash cycle
     fire         — natural-fire gradient with flash cycle
     simon        — global rotating R/B/Y/G across 4 towers (1s/beat)
     rainbow      — continuous hue rotation, 90 deg offset per tower
-    warm_white   — steady dim warm white (chill ambient)
-    bright_white — steady full-bright white
-    candle       — warm white with per-tower Perlin-ish flicker
+    warm_white   — dim warm white on the uplight W channel (+ touch of red)
+    bright_white — full white on the uplight W channel
+    candle       — flickering warm white on the uplight W channel
+
+  Colour themes drive RGB; white themes drive the uplight's dedicated white (W)
+  channel — which is separate from the fire valve (decoder CH4) on real hardware.
+  This single-lamp sim composites W as a warm tint and does NOT show the strip
+  brightness cap; see docs/spec-tower-fixtures-fire-white.md for the real split.
 -->
 <html>
 <head>
@@ -316,24 +321,21 @@
         };
       }
 
+      // The three white themes drive the uplight's dedicated white (W) channel,
+      // now that it is separate from the propane valve (decoder CH4). A touch of
+      // red adds warmth. Mirrors themes.cpp; keep in lock-step or this lies.
       if (theme === 'warm_white') {
-        // Dim warm — bias red, lower brightness ceiling for chill feel.
-        var dim = Math.round(brightness * 0.45);
-        return { r: dim, g: Math.round(dim * 0.55), b: Math.round(dim * 0.18), w: dim, on: true };
+        return { r: Math.round(brightness * 0.12), g: 0, b: 0, w: Math.round(brightness * 0.45), on: true };
       }
 
       if (theme === 'bright_white') {
-        return { r: brightness, g: brightness, b: brightness, w: brightness, on: true };
+        return { r: 0, g: 0, b: 0, w: brightness, on: true };
       }
 
       if (theme === 'candle') {
-        var f = flicker(towerIdx, nowMs);    // 0..1
-        var lvl = brightness * (0.55 + f * 0.45);  // 55-100% of brightness
-        var r = Math.round(lvl);
-        var g = Math.round(lvl * 0.55);
-        var b = Math.round(lvl * 0.18);
-        var w = Math.round(lvl);
-        return { r: r, g: g, b: b, w: w, on: true };
+        var f = flicker(towerIdx, nowMs);
+        var lvl = brightness * (0.55 + f * 0.45);
+        return { r: Math.round(lvl * 0.12), g: 0, b: 0, w: Math.round(lvl), on: true };
       }
 
       return { r: 0, g: 0, b: 0, w: 0, on: false };

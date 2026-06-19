@@ -9,14 +9,15 @@ tests/visual/runs/<UTC timestamp>/ and writes:
 Tests:
   T01 GET /api/state shape — pass if all expected keys present
   T02 IDLE flash window  — pass if at least one frame in the burst captures the
-                           palette-coloured flash (firmware: 800ms ON / 4000ms cycle).
-                           Detected by per-step DMX state read: the 4 RGBW
-                           channels of tower 0 must be > 0 in at least one frame.
+                           themed flash (firmware: 800ms ON / 4000ms cycle for
+                           fire-themed entries). Detected by per-step DMX state
+                           read: the 4 RGBW channels of tower 0 must be > 0 in
+                           at least one frame.
   T03 IDLE blank window  — pass if at least one frame in the burst sees the
                            tower 0 RGBW channels all = 0.
   T04 FIRE_ACTIVE        — pass if /api/state reports fsm.state == FIRE_ACTIVE
                            after a press AND tower 0 RGBW values are non-zero
-                           (fire palette).
+                           (fire theme).
   T05 FIRE → COOLDOWN    — pass if FSM walks through END_CUE/COOLDOWN/IDLE.
   T06 PARTY mode release — pass if release in PARTY mode ends fire early.
   T07 Tower disconnect   — pass if disconnected tower's DMX channels stop changing.
@@ -133,7 +134,7 @@ def baseline():
     post_set("button", mode=0, fireDurationMs=1500, cooldownMs=2000, endCuePattern=0)
     post_set("confluence", connected="on", fireLevel=255)
     for i in range(4):
-        post_set(str(i), connected="on", palette="green", brightness=255, flameLevel=255)
+        post_set(str(i), connected="on", theme="green", brightness=255, flameLevel=255)
 
 
 def t01_state_shape(run: Run):
@@ -151,7 +152,7 @@ def t02_t03_idle_flash_blank(run: Run):
     Pass T02 if any frame has tower 0 RGBW > 0; pass T03 if any frame has all = 0.
     """
     baseline()
-    post_set("all", palette="green", brightness=255, flameLevel=255)
+    post_set("all", theme="green", brightness=255, flameLevel=255)
     time.sleep(0.3)
 
     n = 12
@@ -178,7 +179,7 @@ def t02_t03_idle_flash_blank(run: Run):
 def t04_fire_active(run: Run):
     baseline()
     post_set("button", mode=0, fireDurationMs=8000, cooldownMs=2000)
-    post_set("all", palette="fire", brightness=255, flameLevel=255)
+    post_set("all", theme="fire", brightness=255, flameLevel=255)
     time.sleep(0.3)
     post("/api/button/press")
     time.sleep(0.4)
@@ -222,7 +223,7 @@ def t06_party_release(run: Run):
     baseline()
     post("/api/button/reset")
     post_set("button", mode=1, fireDurationMs=8000, cooldownMs=2000)
-    post_set("all", palette="fire", brightness=255, flameLevel=255)
+    post_set("all", theme="fire", brightness=255, flameLevel=255)
     time.sleep(0.3)
     post("/api/button/press")
     time.sleep(0.4)
@@ -241,13 +242,13 @@ def t06_party_release(run: Run):
 
 def t07_disconnect(run: Run):
     baseline()
-    post_set("1", palette="blue", brightness=255, flameLevel=255)  # leave T1 connected first
+    post_set("1", theme="blue", brightness=255, flameLevel=255)  # leave T1 connected first
     post_set("button", mode=0, fireDurationMs=2000, cooldownMs=2000)
     # Snapshot tower 1 channels (DMX ch 20-23 = decoder, ch 24-34 = strobe block)
     s_before = get_state()
     img_before = capture("T07_t1_connected", run.root)
     # Disconnect T1
-    post_set("1", palette="blue", brightness=255, flameLevel=255)  # connected="on" omitted = disconnected
+    post_set("1", theme="blue", brightness=255, flameLevel=255)  # connected="on" omitted = disconnected
     time.sleep(0.3)
     s_after = get_state()
     img_after = capture("T07_t1_disconnected", run.root)
@@ -258,7 +259,7 @@ def t07_disconnect(run: Run):
                "detail": f"before connected={s_before['towers'][1]['connected']}, after connected={t1_connected}",
                "images": [str(img_before), str(img_after)]})
     # Restore
-    post_set("1", connected="on", palette="green", brightness=255, flameLevel=255)
+    post_set("1", connected="on", theme="green", brightness=255, flameLevel=255)
 
 
 def main():
@@ -292,7 +293,7 @@ def main():
         # Safe shutdown
         try:
             post("/api/button/reset")
-            post_set("all", palette="green", brightness=128, flameLevel=255)
+            post_set("all", theme="green", brightness=128, flameLevel=255)
         except Exception:
             pass
 

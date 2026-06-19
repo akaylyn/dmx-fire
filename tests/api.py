@@ -78,16 +78,18 @@ class Client:
     def set_all_towers(
         self,
         *,
-        palette: str,
+        theme: str,
         brightness: int,
         flameLevel: int,
+        speed: int = 100,
     ) -> None:
         self._post(
             "/set",
             data={
                 "target": "all",
-                "palette": palette,
+                "theme": theme,
                 "brightness": brightness,
+                "speed": speed,
                 "flameLevel": flameLevel,
             },
         )
@@ -97,14 +99,16 @@ class Client:
         index: int,
         *,
         connected: bool,
-        palette: str,
+        theme: str,
         brightness: int,
         flameLevel: int,
+        speed: int = 100,
     ) -> None:
         data: dict[str, Any] = {
             "target": str(index),
-            "palette": palette,
+            "theme": theme,
             "brightness": brightness,
+            "speed": speed,
             "flameLevel": flameLevel,
         }
         if connected:

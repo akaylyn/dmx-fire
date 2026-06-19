@@ -9,7 +9,7 @@
 
 #include <M5Unified.h>
 #include <FastLED.h>
-#include "palettes.h"
+#include "themes.h"
 #include "dmx.h"
 #include "towers.h"
 #include "confluence.h"
@@ -74,41 +74,29 @@ void loop() {
 
   // DMX output — 50 Hz
   EVERY_N_MILLISECONDS(20) {
-    static uint8_t paletteIndex = 0;
-
     for (uint8_t i = 0; i < NUM_TOWERS; i++) {
       if (!towerConfigs[i].connected) continue;
 
-      TowerState state = {};
-      state.masterDim  = 255;
+      // Theme renderer owns the per-frame colour + uplight white every state.
+      // Fire (decoder CH4) and the end-cue white flash are overlaid on top so
+      // firing never forces white and the white flash never opens the valve.
+      TowerState state = themeRender(towerConfigs[i].themeName, i, millis(),
+                                     towerConfigs[i].bright, towerConfigs[i].speed);
 
       switch (fsmState) {
-        case FSM_FIRE_ACTIVE: {
-          // White only: channel 4 (W) at full flameLevel, RGB off.
-          state.wDim = towerConfigs[i].flameLevel;  // 255 by default; user-adjustable per tower
+        case FSM_FIRE_ACTIVE:
+          // Open the per-tower propane valve; leave colour/white as the theme set them.
+          state.fire = towerConfigs[i].flameLevel;
           break;
-        }
         case FSM_END_CUE: {
+          // White flash fade on the uplight white channel (not the valve).
           uint32_t elapsed = fsmElapsedMs();
-          state.wDim = (elapsed < 1000) ? (uint8_t)(255 - elapsed * 255 / 1000) : 0;
+          uint8_t fade = (elapsed < 1000) ? (uint8_t)(255 - elapsed * 255 / 1000) : 0;
+          if (fade > state.white) state.white = fade;
           break;
         }
-        default: {
-          // IDLE / COOLDOWN: blank with an occasional palette-coloured flash.
-          // 4-second cycle, 800 ms ON, rest OFF.
-          uint32_t cyclePos = millis() % 4000;
-          if (cyclePos < 800) {
-            CRGB c = ColorFromPalette(towerConfigs[i].pal, paletteIndex, towerConfigs[i].bright, LINEARBLEND);
-            state.r    = c.r;
-            state.g    = c.g;
-            state.b    = c.b;
-            state.wDim = towerConfigs[i].bright;
-          } else {
-            state.r = state.g = state.b = 0;
-            state.wDim = 0;
-          }
-          break;
-        }
+        default:
+          break;  // IDLE / COOLDOWN: theme only
       }
 
       towerWrite(i, state);
@@ -130,8 +118,6 @@ void loop() {
       }
       confluenceWrite(cfLevel);
     }
-
-    paletteIndex++;
 
     // Log DMX frame on state transitions so we can verify channel values on the wire.
     static FsmState lastDmxLogState = FSM_IDLE;

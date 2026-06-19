@@ -37,7 +37,7 @@ def baseline(device: Client):
     device.set_button(mode=0, fireDurationMs=500, cooldownMs=2000, endCuePattern=0)
     device.set_confluence(connected=True, fireLevel=255)
     for i in range(4):
-        device.set_tower(i, connected=True, palette="green", brightness=128, flameLevel=255)
+        device.set_tower(i, connected=True, theme="green", brightness=128, speed=100, flameLevel=255)
     yield
     # Best-effort cleanup so a failing test doesn't leave the rig in FIRE_ACTIVE.
     try:

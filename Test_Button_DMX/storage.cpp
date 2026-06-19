@@ -2,7 +2,6 @@
 #include "towers.h"
 #include "confluence.h"
 #include "button_fsm.h"
-#include "palettes.h"
 #include "storage.h"
 
 static Preferences prefs;
@@ -22,10 +21,14 @@ void storageLoad() {
     snprintf(key, sizeof(key), "t%df", i);
     towerConfigs[i].flameLevel = prefs.getUChar(key, 255);
 
-    // palName must be fetched into a String; pal is derived from it
-    snprintf(key, sizeof(key), "t%dp", i);
-    towerConfigs[i].palName = prefs.getString(key, "green");
-    towerConfigs[i].pal     = palFromName(towerConfigs[i].palName);
+    snprintf(key, sizeof(key), "t%ds", i);
+    towerConfigs[i].speed = prefs.getUShort(key, 100);
+
+    // Key renamed t%dp → t%dh as part of the palette→theme migration; any
+    // previously-saved palette name is intentionally not migrated and the
+    // tower resets to the default "green" theme on first boot after upload.
+    snprintf(key, sizeof(key), "t%dh", i);
+    towerConfigs[i].themeName = prefs.getString(key, "green");
   }
 
   confluenceConfig.connected = prefs.getBool("cfcon", true);
@@ -55,8 +58,11 @@ void storageSave() {
     snprintf(key, sizeof(key), "t%df", i);
     prefs.putUChar(key, towerConfigs[i].flameLevel);
 
-    snprintf(key, sizeof(key), "t%dp", i);
-    prefs.putString(key, towerConfigs[i].palName);
+    snprintf(key, sizeof(key), "t%ds", i);
+    prefs.putUShort(key, towerConfigs[i].speed);
+
+    snprintf(key, sizeof(key), "t%dh", i);
+    prefs.putString(key, towerConfigs[i].themeName);
   }
 
   prefs.putBool("cfcon",    confluenceConfig.connected);

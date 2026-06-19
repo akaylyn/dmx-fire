@@ -46,7 +46,7 @@ def test_fire_active_drives_confluence(device):
 
 def test_fire_active_drives_tower_flame(device):
     for i in range(4):
-        device.set_tower(i, connected=True, palette="green", brightness=128, flameLevel=180)
+        device.set_tower(i, connected=True, theme="green", brightness=128, flameLevel=180)
     device.set_button(mode=0, fireDurationMs=2000, cooldownMs=2000)
     device.press()
     device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
@@ -79,10 +79,10 @@ def test_disconnected_tower_skipped(device):
     """
     device.reset()
     # Tower 1 disconnected, others connected.
-    device.set_tower(0, connected=True, palette="green", brightness=128, flameLevel=200)
-    device.set_tower(1, connected=False, palette="green", brightness=128, flameLevel=200)
-    device.set_tower(2, connected=True, palette="green", brightness=128, flameLevel=200)
-    device.set_tower(3, connected=True, palette="green", brightness=128, flameLevel=200)
+    device.set_tower(0, connected=True, theme="green", brightness=128, flameLevel=200)
+    device.set_tower(1, connected=False, theme="green", brightness=128, flameLevel=200)
+    device.set_tower(2, connected=True, theme="green", brightness=128, flameLevel=200)
+    device.set_tower(3, connected=True, theme="green", brightness=128, flameLevel=200)
     device.set_button(mode=0, fireDurationMs=1500, cooldownMs=2000)
     device.press()
     device.wait_for_state("FIRE_ACTIVE", timeout=1.0)

@@ -6,20 +6,21 @@ static const uint8_t NUM_TOWERS = 4;
 
 // State sent to every fixture in a tower each DMX frame.
 struct TowerState {
-  uint8_t r, g, b;      // colour — written to decoder CH1-3 and strobe CH5-7
+  uint8_t r, g, b;      // theme colour — uplight RGB (full) + accumulator strips (capped)
   uint8_t masterDim;    // strobe CH1: overall brightness (0–255)
   uint8_t rgbStrobe;    // strobe CH2: RGB strobe speed (0=off, 1–255=slow→fast)
   uint8_t wStrobe;      // strobe CH8: white strobe speed (0=off, 1–255=slow→fast)
-  uint8_t wDim;         // strobe CH11 + decoder CH4: white level (0–255)
+  uint8_t white;        // uplight white channel (strobe CH11) — independent of fire
+  uint8_t fire;         // accumulator decoder CH4 — propane valve, FIRE_ACTIVE only
 };
 
 // Web-configurable idle state for one tower.
 struct TowerConfig {
-  bool            connected;   // physically present (tracked in web UI)
-  String          palName;     // "green", "blue", "fire" — for web UI rendering
-  CRGBPalette256  pal;         // active idle palette
-  uint8_t         bright;      // idle brightness 0–255
-  uint8_t         flameLevel;  // 0=off, 255=full open; written to decoder CH4 (W) during fire
+  bool      connected;   // physically present (tracked in web UI)
+  String    themeName;   // "green","blue","fire","simon","rainbow","warm_white","bright_white","candle"
+  uint8_t   bright;      // idle brightness 0–255
+  uint16_t  speed;       // theme speed % (10..400, 100 = normal)
+  uint8_t   flameLevel;  // 0=off, 255=full open; written to decoder CH4 (W) during fire
 };
 
 extern TowerConfig towerConfigs[NUM_TOWERS];

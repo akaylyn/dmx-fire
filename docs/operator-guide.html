@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Operating the DMX Fire controller — quick guide</title>
+</head>
+<body style="font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; color: #222; max-width: 720px; margin: 24px auto; padding: 0 16px; line-height: 1.5;">
+
+<p style="margin:0 0 1em 0;">Hi —</p>
+
+<p>Here's everything you need to run the fire controller on your own. The controller is an M5AtomS3 (small black USB-C box with a button on top). In this build it drives <strong>only the propane solenoid</strong> (called "Confluence" in the UI) over DMX channel 4. No light towers are wired up — ignore any tower-related controls if you see them.</p>
+
+<p style="border-left: 4px solid #c33; background: #fff4f4; padding: 10px 14px; margin: 1em 0;">
+<strong>Important — read before opening the page on a phone:</strong> The config page has a big red <strong>Test Fire</strong> button at the top. Tapping it fires the solenoid <em>immediately</em>, with no confirmation. The button reacts to a single touch, so while you're scrolling the page on a phone it's easy to land a finger on it accidentally and trigger a real fire. <strong>Scroll from a part of the page that isn't the red button</strong> (the white margins on either side, or further down the page), and keep the gas closed until you're ready to test.
+</p>
+
+<h2 style="border-bottom:1px solid #ccc; padding-bottom:4px;">1. Powering it on</h2>
+<p>Plug the controller into USB power (any phone charger or USB battery works). After ~10 seconds it brings up its own WiFi network — there is no internet involved, you're connecting directly to the controller.</p>
+
+<h2 style="border-bottom:1px solid #ccc; padding-bottom:4px;">2. Connecting to it</h2>
+<p>On your phone or laptop, join the WiFi network the controller is broadcasting. The SSID and password were set when the firmware was built — they're labeled on the device. There is <strong>no internet</strong> while you're on this network; that's normal.</p>
+<p>Once joined, open a browser to <strong><a href="http://192.168.4.1" style="color:#06c;">http://192.168.4.1</a></strong> — that's the controller's config page. On most phones a captive-portal banner will pop up automatically; tapping it opens the same page.</p>
+<p>If the page doesn't load, try <code style="background:#f4f4f4; padding:1px 4px; border-radius:3px;">http://192.168.4.1/</code> with the trailing slash, or turn WiFi off and back on so the phone re-joins.</p>
+
+<h2 style="border-bottom:1px solid #ccc; padding-bottom:4px;">3. The config page — section by section</h2>
+<p>The page is one long form. <strong>Every slider and dropdown saves automatically</strong> as soon as you release a slider or pick a dropdown option — no Save button required. Settings persist across power cycles.</p>
+
+<h3>Test Fire</h3>
+<table style="border-collapse: collapse; width: 100%;" cellpadding="8">
+  <thead>
+    <tr style="background:#f4f4f4;">
+      <th style="border:1px solid #ccc; text-align:left;">Control</th>
+      <th style="border:1px solid #ccc; text-align:left;">What it does</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="border:1px solid #ccc;"><strong>Press &amp; hold to fire</strong> (red button)</td>
+      <td style="border:1px solid #ccc;">Same as the physical button. Tap-and-hold to fire, release to stop (in modes that respect release). Cooldown applies the same as a physical press. Use this to sanity-check before a show.</td>
+    </tr>
+  </tbody>
+</table>
+<p style="border-left: 4px solid #c33; background: #fff4f4; padding: 10px 14px; margin: 1em 0;">
+<strong>Caution:</strong> This button fires on a single touch with no confirmation. When scrolling the page on a phone, scroll from the side margins or from a section below — <em>not from the red button itself</em>, or you'll trigger a fire. Keep the propane closed until you're actually ready to test.
+</p>
+
+<h3>Button Config — the main thing you'll adjust</h3>
+<table style="border-collapse: collapse; width: 100%;" cellpadding="8">
+  <thead>
+    <tr style="background:#f4f4f4;">
+      <th style="border:1px solid #ccc; text-align:left;">Setting</th>
+      <th style="border:1px solid #ccc; text-align:left;">What it does</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td style="border:1px solid #ccc;"><strong>Mode &rarr; Fireball</strong></td><td style="border:1px solid #ccc;">Press once &rarr; fires for the full <strong>Fire duration</strong> then stops. Releasing the button early does nothing; it always runs the full duration.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Mode &rarr; Party</strong></td><td style="border:1px solid #ccc;">Fires while held, stops the moment you let go (up to the Fire duration cap). Good for quick blasts of varying length.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Mode &rarr; Machine Gun</strong></td><td style="border:1px solid #ccc;">While held, pulses the solenoid on/off every <strong>Machine gun burst</strong> milliseconds. Release to stop.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Fire duration (ms)</strong></td><td style="border:1px solid #ccc;">Max time the solenoid stays open in one trigger. Range 50–10000&nbsp;ms. Default 3000&nbsp;ms (3 seconds).</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Machine gun burst (ms)</strong></td><td style="border:1px solid #ccc;">Only shown in Machine Gun mode. The on-time and off-time of each pulse. Range 50–2000&nbsp;ms.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Cooldown (ms)</strong></td><td style="border:1px solid #ccc;">Lockout time between consecutive fires. Range 50–30000&nbsp;ms. Default 10 seconds. The button physically does nothing during cooldown — this is a safety feature, not a bug.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>End cue</strong></td><td style="border:1px solid #ccc;">A visual cue meant for towers. Has no effect in this build (no towers wired). Leave at default.</td></tr>
+  </tbody>
+</table>
+
+<h3>Morse Code</h3>
+<table style="border-collapse: collapse; width: 100%;" cellpadding="8">
+  <thead>
+    <tr style="background:#f4f4f4;">
+      <th style="border:1px solid #ccc; text-align:left;">Control</th>
+      <th style="border:1px solid #ccc; text-align:left;">What it does</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td style="border:1px solid #ccc;"><strong>Message</strong></td><td style="border:1px solid #ccc;">Text to send (e.g. <code style="background:#f4f4f4; padding:1px 4px; border-radius:3px;">SOS</code>). Letters and digits only.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Unit (ms)</strong></td><td style="border:1px solid #ccc;">Base timing unit. Range 50–500&nbsp;ms; ~150&nbsp;ms is readable. Dots = 1 unit, dashes = 3 units, spaces between letters = 3 units, spaces between words = 7 units.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Fire in Morse</strong></td><td style="border:1px solid #ccc;">Plays your message on the solenoid as dots and dashes. Cooldown is bypassed during Morse — it runs straight through.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Stop</strong></td><td style="border:1px solid #ccc;">Aborts immediately.</td></tr>
+  </tbody>
+</table>
+
+<h3>Confluence (the propane solenoid)</h3>
+<table style="border-collapse: collapse; width: 100%;" cellpadding="8">
+  <thead>
+    <tr style="background:#f4f4f4;">
+      <th style="border:1px solid #ccc; text-align:left;">Setting</th>
+      <th style="border:1px solid #ccc; text-align:left;">What it does</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td style="border:1px solid #ccc;"><strong>Connected</strong></td><td style="border:1px solid #ccc;">Leave <strong>checked</strong>. Unchecking disables the solenoid entirely — only useful for dry-run testing without gas.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Fire level</strong></td><td style="border:1px solid #ccc;">Solenoid drive level on DMX channel 4. Range 0–255. Leave at the value you found it at; 255 is fully open.</td></tr>
+  </tbody>
+</table>
+
+<blockquote style="border-left:4px solid #ccc; margin: 1em 0; padding: 4px 14px; color:#555;">
+The "All Towers" and "Tower 0/1/2/3" sections further down the page are not used in this build. Ignore them.
+</blockquote>
+
+<h2 style="border-bottom:1px solid #ccc; padding-bottom:4px;">4. The physical button</h2>
+<p>It's a single button connected to the controller. Press behavior depends on the <strong>Mode</strong> above. The button does nothing during the cooldown period after a fire — wait the cooldown duration (default 10&nbsp;s) before pressing again.</p>
+
+<h2 style="border-bottom:1px solid #ccc; padding-bottom:4px;">5. If something goes wrong</h2>
+<table style="border-collapse: collapse; width: 100%;" cellpadding="8">
+  <thead>
+    <tr style="background:#f4f4f4;">
+      <th style="border:1px solid #ccc; text-align:left;">Symptom</th>
+      <th style="border:1px solid #ccc; text-align:left;">What to try</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td style="border:1px solid #ccc;"><strong>No WiFi network appears</strong></td><td style="border:1px solid #ccc;">Unplug the controller, count to 5, plug it back in. Wait ~10 seconds.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Button does nothing</strong></td><td style="border:1px solid #ccc;">Could be in cooldown — wait the cooldown duration and try again. If still dead, power-cycle.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Solenoid won't fire at all</strong></td><td style="border:1px solid #ccc;">Open the config page, check <strong>Confluence &rarr; Connected</strong> is checked and <strong>Fire level</strong> is non-zero. Confirm gas supply and that the DMX cable to the solenoid is seated.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Test Fire button works, physical button doesn't</strong></td><td style="border:1px solid #ccc;">The physical button or its wiring is the problem, not the controller.</td></tr>
+    <tr><td style="border:1px solid #ccc;"><strong>Want to start over from defaults</strong></td><td style="border:1px solid #ccc;">Power-cycle alone won't reset; settings are saved to flash. Reach out and I can walk you through a config reset.</td></tr>
+  </tbody>
+</table>
+
+<p>You don't need a laptop for any of this — a phone in a browser is enough. The page is mobile-friendly.</p>
+
+<p>Have fun and be safe.</p>
+
+<p>—</p>
+
+</body>
+</html>

@@ -34,7 +34,7 @@ Central confluence solenoid occupies CH1–4 (CH4 = central valve). Each tower t
 ## Channel semantics (`towerWrite`)
 
 **Decoder (base+1 … base+4):**
-- base+1..3: strip R/G/B, scaled by `STRIP_BRIGHTNESS_PCT` (≈50%) to protect the old strips.
+- base+1..3: strip R/G/B, scaled by `STRIP_BRIGHTNESS_PCT` (75%) to protect the old strips. Full white (all three channels) is the worst-case draw, so this ceiling bounds every theme.
 - base+4: `state.fire` — the propane valve. Set only by the FSM (`flameLevel` during `FIRE_ACTIVE`), 0 otherwise. Never carries white.
 
 **Uplight (base+5 … base+15):** full theme RGB on its R/G/B, `state.white` on the white dimmer (CH11), `masterDim=255`, `rgbStrobe=1`. White is independent of fire.

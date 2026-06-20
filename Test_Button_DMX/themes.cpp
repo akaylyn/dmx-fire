@@ -121,31 +121,33 @@ TowerState themeRender(const String& name, uint8_t index, uint32_t nowMs,
     return s;
   }
 
-  // The three white themes drive the uplight's dedicated white channel — safe
-  // now that it's separate from the fire valve. A touch of red on the uplight
-  // RGB adds warmth (the accumulator strips get the capped red; their power
-  // draw stays low because the bulk of the output is on the white channel).
+  // White themes drive RGB (so the colour shows on the capped accumulator
+  // strips) PLUS the uplight's dedicated white channel: warm_white/candle use a
+  // warm RGB mix, bright_white uses full white. None touch the fire valve
+  // (decoder CH4) — that channel is mapped separately and only opens during
+  // FIRE_ACTIVE. Strip power stays safe via STRIP_BRIGHTNESS_PCT in towerWrite.
   if (name == "warm_white") {
-    s.white = (uint8_t)roundf(brightness * 0.45f);
-    s.r     = (uint8_t)roundf(brightness * 0.12f);  // warmth
-    s.g     = 0;
-    s.b     = 0;
+    uint8_t dim = (uint8_t)roundf(brightness * 0.45f);
+    s.r     = dim;
+    s.g     = (uint8_t)roundf(dim * 0.55f);
+    s.b     = (uint8_t)roundf(dim * 0.18f);
+    s.white = dim;
     return s;
   }
 
   if (name == "bright_white") {
+    s.r = s.g = s.b = brightness;  // full white on RGB (strips capped in towerWrite)
     s.white = brightness;
-    s.r = s.g = s.b = 0;
     return s;
   }
 
   if (name == "candle") {
     float f = flicker01(index, (float)t);
     float lvl = brightness * (0.55f + f * 0.45f);
+    s.r     = (uint8_t)roundf(lvl);
+    s.g     = (uint8_t)roundf(lvl * 0.55f);
+    s.b     = (uint8_t)roundf(lvl * 0.18f);
     s.white = (uint8_t)roundf(lvl);
-    s.r     = (uint8_t)roundf(lvl * 0.12f);  // warmth flicker
-    s.g     = 0;
-    s.b     = 0;
     return s;
   }
 

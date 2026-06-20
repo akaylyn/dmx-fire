@@ -20,8 +20,10 @@ static const uint8_t CHANNELS_PER_TOWER = 15;
 
 // Accumulator LED strips are RGB-only, old, and power-limited — sending full
 // RGB (especially all three for white) overdraws the supply. Cap their colour
-// to this percentage. The uplight (modern RGBW) runs at full brightness.
-static const uint16_t STRIP_BRIGHTNESS_PCT = 50;
+// to this percentage; full white (all three channels) is the worst case, so
+// keeping this at/under the safe-white ceiling protects every theme. The
+// uplight (modern RGBW) runs at full brightness, uncapped.
+static const uint16_t STRIP_BRIGHTNESS_PCT = 75;
 
 // Write state to one tower. Each tower has TWO fixtures sharing one config:
 //   Decoder  (4ch): CH1-3 = accumulator strip RGB (capped); CH4 = FIRE valve only.

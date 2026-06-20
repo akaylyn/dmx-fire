@@ -19,15 +19,15 @@ This is a rename + extension: `palette` → `theme` across firmware, JSON, stora
 | `fire` | gradient | Natural-fire palette, same flash cycle |
 | `simon` | procedural | Global rotating R/B/Y/G across the 4 towers, 1 s/beat; tower `i` at beat `b` shows `SIMON[(i − b + 4) % 4]` |
 | `rainbow` | procedural | Continuous hue rotation (~8 s/cycle), 90° (0.25) hue offset per tower |
-| `warm_white` | procedural | Dim warm white on the uplight white channel (+ touch of red on RGB for warmth) |
-| `bright_white` | procedural | Full white on the uplight white channel; RGB off |
-| `candle` | procedural | Flickering warm white on the uplight white channel (summed-sine flicker per tower) |
+| `warm_white` | procedural | Dim warm white: balanced warm RGB mix + uplight white channel |
+| `bright_white` | procedural | Full white: RGB white + uplight white channel (strips capped) |
+| `candle` | procedural | Flickering warm white: warm RGB mix + uplight white channel (summed-sine flicker per tower) |
 
 Unknown names fall back to `green`.
 
 ### Colour vs. white
 
-Colour themes drive RGB (`s.r/g/b`) and leave `s.white = 0`. White themes drive `s.white` (the uplight's dedicated white channel) and keep RGB low/off. This matters because white is a separate DMX channel from the fire valve — see [spec-tower-fixtures-fire-white.md](spec-tower-fixtures-fire-white.md). The fire gradients still keep `white = 0`; their white "tips" come from the gradient's RGB, not the W channel.
+Colour themes drive RGB (`s.r/g/b`) and leave `s.white = 0`. White themes drive `s.white` (the uplight's dedicated white channel); `warm_white` and `candle` *also* drive a balanced warm RGB mix so they read as white on the accumulator strips too, while `bright_white` is white-channel only. No theme touches the fire valve (decoder CH4) — that channel is mapped separately and only opens during `FIRE_ACTIVE`, so white themes can drive full colour + white safely. See [spec-tower-fixtures-fire-white.md](spec-tower-fixtures-fire-white.md). The fire gradients keep `white = 0`; their white "tips" come from the gradient's RGB, not the W channel.
 
 ### Speed
 

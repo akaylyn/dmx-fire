@@ -83,7 +83,7 @@ Tower 2:     CH 35–49  (decoder A035 fire=CH38; uplight A039)
 Tower 3:     CH 50–64  (decoder A050 fire=CH53; uplight A054)
 ```
 
-**Fire and white are independent channels.** The decoder's CH4 is the fire valve (only opened during `FIRE_ACTIVE`); the uplight's white channel (CH11 of its block) is driven by themes/end-cue. Firing never lights white; white never opens a valve. Accumulator strip RGB is capped (~50%, `STRIP_BRIGHTNESS_PCT` in `towers.cpp`) to protect the old, power-limited strips; the uplight runs full brightness.
+**Fire and white are independent channels.** The decoder's CH4 is the fire valve (only opened during `FIRE_ACTIVE`); the uplight's white channel (CH11 of its block) is driven by themes/end-cue. Firing never lights white; white never opens a valve. Accumulator strip RGB is capped (75%, `STRIP_BRIGHTNESS_PCT` in `towers.cpp`) to protect the old, power-limited strips; the uplight runs full brightness.
 
 ### Key Subsystems
 

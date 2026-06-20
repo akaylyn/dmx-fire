@@ -50,7 +50,7 @@ Tower 3:    ch 50–64
 
 | Offset | Fixture CH | Device | Signal | Notes |
 |--------|-----------|--------|--------|-------|
-| +1 | 1 | Decoder | Red (strip) | Capped to `STRIP_BRIGHTNESS_PCT` (≈50%) — old/power-limited strips |
+| +1 | 1 | Decoder | Red (strip) | Capped to `STRIP_BRIGHTNESS_PCT` (75%) — old/power-limited strips |
 | +2 | 2 | Decoder | Green (strip) | Capped |
 | +3 | 3 | Decoder | Blue (strip) | Capped |
 | +4 | 4 | Decoder | **FIRE valve** | Propane only. Driven by `flameLevel` during `FIRE_ACTIVE`, 0 otherwise. **Never carries white.** |

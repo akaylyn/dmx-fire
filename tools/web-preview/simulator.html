@@ -6,6 +6,12 @@
   mock server at http://localhost:8123/simulator for previewing idle theme
   animations before /web-sync ports changes to the device.
 
+  Each tower is shown as its two real fixtures — the LaluceNatz uplight (full
+  RGBW) and the accumulator strips (RGB-only, capped 75%, no white channel) —
+  plus a per-tower fire valve (decoder CH4) and a central Confluence valve.
+  "Press & hold to fire" locally simulates FIRE_ACTIVE -> END_CUE (uplight white
+  flash) -> idle; it does not POST to the device.
+
   The /web-sync skill must NEVER port this file's contents into web.cpp —
   the firmware should stay lean. Theme logic in here is a JS port of the
   firmware's themes; if you change the firmware rendering, mirror the change
@@ -17,9 +23,9 @@
     fire         — natural-fire gradient with flash cycle
     simon        — global rotating R/B/Y/G across 4 towers (1s/beat)
     rainbow      — continuous hue rotation, 90 deg offset per tower
-    warm_white   — dim warm white on the uplight W channel (+ touch of red)
-    bright_white — full white on the uplight W channel
-    candle       — flickering warm white on the uplight W channel
+    warm_white   — dim warm white: warm RGB mix + uplight W channel
+    bright_white — full white: RGB white + uplight W channel
+    candle       — flickering warm white: warm RGB mix + uplight W channel
 
   Colour themes drive RGB; white themes drive the uplight's dedicated white (W)
   channel — which is separate from the fire valve (decoder CH4) on real hardware.
@@ -93,18 +99,59 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
     .tower .name { font-size: 0.85rem; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase }
-    .tower .lamp {
+    .tower .sublabel {
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
       width: 100%;
-      aspect-ratio: 1 / 2;
-      max-height: 320px;
+      text-align: left;
+    }
+    /* Uplight = LaluceNatz, full RGBW, uncapped. Tall (it shines up the tower). */
+    .tower .lamp.uplight {
+      width: 100%;
+      aspect-ratio: 1 / 1.6;
+      max-height: 240px;
       border-radius: 12px;
       background: #000;
       box-shadow: inset 0 0 0 2px rgba(255,255,255,0.04);
       transition: box-shadow 0.05s linear;
     }
+    /* Strips = accumulator wrap, RGB-only, capped 75%. Short band around the tank. */
+    .tower .lamp.strips {
+      width: 100%;
+      height: 34px;
+      border-radius: 8px;
+      background: #000;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.04);
+      transition: box-shadow 0.05s linear;
+    }
+    /* Per-tower fire valve indicator (decoder CH4). */
+    .tower .valve {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .valve .dot {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #2a2a31;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+      transition: background 0.08s linear, box-shadow 0.08s linear;
+    }
+    .valve.firing .dot {
+      background: #ff5a1f;
+      box-shadow: 0 0 10px 3px rgba(255,90,31,0.8);
+    }
+    .valve.firing { color: #ff8a5a }
     .tower .ch {
       font-size: 0.7rem;
       color: var(--muted);
@@ -113,6 +160,41 @@
       width: 100%;
       text-align: center;
     }
+
+    /* Confluence — central propane valve. Spans the top of the stage. */
+    .confluence {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+    }
+    .confluence .name { font-size: 0.85rem; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; flex: 0 0 auto }
+    .confluence .flame {
+      flex: 1;
+      height: 28px;
+      border-radius: 8px;
+      background: #000;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.04);
+      transition: background 0.08s linear, box-shadow 0.08s linear;
+    }
+    .confluence.firing .flame {
+      background: linear-gradient(90deg, #ff3d00, #ff8a1f, #ffd000);
+      box-shadow: 0 0 18px 4px rgba(255,90,20,0.7);
+    }
+    .confluence .state { font-size: 0.7rem; color: var(--muted); flex: 0 0 auto; min-width: 4em; text-align: right }
+    .confluence.firing .state { color: #ff8a5a; font-weight: 700 }
+
+    /* Press & hold fire button (mirrors the real Test Fire). */
+    #fireBtn {
+      background: #c33; color: #fff; border: 0; padding: 10px 18px;
+      border-radius: 6px; cursor: pointer; font-weight: 700; min-height: 36px;
+      user-select: none; -webkit-user-select: none; touch-action: none;
+    }
+    #fireBtn:active, #fireBtn.firing { background: #900 }
 
     .legend {
       background: var(--panel);
@@ -156,37 +238,66 @@
       <input type='range' id='speed' min='10' max='400' value='100'>
     </label>
     <button id='playPause'>Pause</button>
+    <button id='fireBtn' title='Press &amp; hold to fire (local sim only)'>Press &amp; hold to fire</button>
     <button id='applyBtn' title='POST target=all to /set'>Push to all towers &rarr;</button>
     <span id='applyStatus' style='font-size:0.8rem;color:var(--muted)'></span>
+  </div>
+
+  <div class='confluence' id='confluence'>
+    <div class='name'>Confluence</div>
+    <div class='flame' id='cfFlame'></div>
+    <div class='state' id='cfState'>idle</div>
   </div>
 
   <div class='stage' id='stage'>
     <div class='tower'>
       <div class='name'>Tower 0</div>
-      <div class='lamp' id='lamp0'></div>
+      <div class='sublabel'>Uplight (LaluceNatz)</div>
+      <div class='lamp uplight' id='up0'></div>
+      <div class='sublabel'>Accumulator strips</div>
+      <div class='lamp strips' id='strip0'></div>
+      <div class='valve' id='valve0'><span class='dot'></span> Fire CH4</div>
       <div class='ch' id='ch0'>R=0 G=0 B=0 W=0</div>
     </div>
     <div class='tower'>
       <div class='name'>Tower 1</div>
-      <div class='lamp' id='lamp1'></div>
+      <div class='sublabel'>Uplight (LaluceNatz)</div>
+      <div class='lamp uplight' id='up1'></div>
+      <div class='sublabel'>Accumulator strips</div>
+      <div class='lamp strips' id='strip1'></div>
+      <div class='valve' id='valve1'><span class='dot'></span> Fire CH4</div>
       <div class='ch' id='ch1'>R=0 G=0 B=0 W=0</div>
     </div>
     <div class='tower'>
       <div class='name'>Tower 2</div>
-      <div class='lamp' id='lamp2'></div>
+      <div class='sublabel'>Uplight (LaluceNatz)</div>
+      <div class='lamp uplight' id='up2'></div>
+      <div class='sublabel'>Accumulator strips</div>
+      <div class='lamp strips' id='strip2'></div>
+      <div class='valve' id='valve2'><span class='dot'></span> Fire CH4</div>
       <div class='ch' id='ch2'>R=0 G=0 B=0 W=0</div>
     </div>
     <div class='tower'>
       <div class='name'>Tower 3</div>
-      <div class='lamp' id='lamp3'></div>
+      <div class='sublabel'>Uplight (LaluceNatz)</div>
+      <div class='lamp uplight' id='up3'></div>
+      <div class='sublabel'>Accumulator strips</div>
+      <div class='lamp strips' id='strip3'></div>
+      <div class='valve' id='valve3'><span class='dot'></span> Fire CH4</div>
       <div class='ch' id='ch3'>R=0 G=0 B=0 W=0</div>
     </div>
   </div>
 
   <div class='legend'>
     <strong>Note:</strong> rendering here is a JS reimplementation of the firmware theme functions. Keep
-    <code>renderTheme()</code> in this file in lock-step with the firmware's theme renderer (see <code>Test_Button_DMX/themes.cpp</code> once /web-sync lands), otherwise this preview will lie.
+    <code>renderTheme()</code> in this file in lock-step with <code>Test_Button_DMX/themes.cpp</code>, otherwise this preview will lie.
     Fire-flash themes use the 800 ms ON / 3200 ms OFF idle cycle; others render continuously.
+    Each tower shows its two fixtures: the <strong>uplight</strong> (LaluceNatz, full RGBW) and the
+    <strong>accumulator strips</strong> (RGB-only, capped at 75%, no white channel) — so the strips never
+    show the white tint and sit dimmer than the uplight. <strong>Press &amp; hold to fire</strong> opens the
+    <strong>Confluence</strong> (central valve) and every tower's <strong>Fire CH4</strong> valve; releasing
+    plays the end-cue white flash on the uplights only. The fire button is a local preview — it does not
+    POST to the device.
   </div>
 
   <script>
@@ -321,21 +432,22 @@
         };
       }
 
-      // The three white themes drive the uplight's dedicated white (W) channel,
-      // now that it is separate from the propane valve (decoder CH4). A touch of
-      // red adds warmth. Mirrors themes.cpp; keep in lock-step or this lies.
+      // warm_white and candle use a balanced warm RGB mix plus the uplight's
+      // dedicated white (W) channel; bright_white is W-only. None touch the
+      // propane valve (decoder CH4). Mirrors themes.cpp; keep in lock-step.
       if (theme === 'warm_white') {
-        return { r: Math.round(brightness * 0.12), g: 0, b: 0, w: Math.round(brightness * 0.45), on: true };
+        var dim = Math.round(brightness * 0.45);
+        return { r: dim, g: Math.round(dim * 0.55), b: Math.round(dim * 0.18), w: dim, on: true };
       }
 
       if (theme === 'bright_white') {
-        return { r: 0, g: 0, b: 0, w: brightness, on: true };
+        return { r: brightness, g: brightness, b: brightness, w: brightness, on: true };
       }
 
       if (theme === 'candle') {
         var f = flicker(towerIdx, nowMs);
         var lvl = brightness * (0.55 + f * 0.45);
-        return { r: Math.round(lvl * 0.12), g: 0, b: 0, w: Math.round(lvl), on: true };
+        return { r: Math.round(lvl), g: Math.round(lvl * 0.55), b: Math.round(lvl * 0.18), w: Math.round(lvl), on: true };
       }
 
       return { r: 0, g: 0, b: 0, w: 0, on: false };
@@ -349,12 +461,27 @@
     var speedVal    = document.getElementById('speedVal');
     var playBtn     = document.getElementById('playPause');
 
-    var lamps = [0,1,2,3].map(function (i) { return document.getElementById('lamp' + i); });
-    var chs   = [0,1,2,3].map(function (i) { return document.getElementById('ch' + i); });
+    var uplights = [0,1,2,3].map(function (i) { return document.getElementById('up' + i); });
+    var strips   = [0,1,2,3].map(function (i) { return document.getElementById('strip' + i); });
+    var valves   = [0,1,2,3].map(function (i) { return document.getElementById('valve' + i); });
+    var chs      = [0,1,2,3].map(function (i) { return document.getElementById('ch' + i); });
+    var confluence = document.getElementById('confluence');
+    var cfState    = document.getElementById('cfState');
+
+    // Strip cap mirrors STRIP_BRIGHTNESS_PCT in towers.cpp.
+    var STRIP_PCT = 0.75;
 
     var simNowMs = 0;
     var lastFrameMs = performance.now();
     var playing = true;
+
+    // -- Local fire state machine: mirrors the firmware FSM's fire/end-cue. --
+    // idle -> (press) firing -> (release) endcue -> idle. The end-cue is a
+    // 1000 ms white fade on the UPLIGHT white channel only (strips have no W,
+    // the valve is unaffected) — matching Test_Button_DMX.ino.
+    var fireState = 'idle';
+    var endcueStartMs = 0;
+    var END_CUE_MS = 1000;
 
     function lampColor(r, g, b, w, on) {
       // Composite: warm-white channel adds a yellow-ish tint at high w.
@@ -368,6 +495,11 @@
       return { bg: bg, glow: 'inset 0 0 0 2px rgba(255,255,255,0.04), ' + glow };
     }
 
+    function paint(el, lc) {
+      el.style.background = lc.bg;
+      el.style.boxShadow = lc.glow;
+    }
+
     function tick() {
       var now = performance.now();
       if (playing) {
@@ -377,16 +509,37 @@
       }
       lastFrameMs = now;
 
+      // End-cue auto-completes after END_CUE_MS (uses real time, not sim time).
+      var endCueFade = 0;
+      if (fireState === 'endcue') {
+        var e = now - endcueStartMs;
+        if (e >= END_CUE_MS) { fireState = 'idle'; }
+        else { endCueFade = Math.round(255 * (1 - e / END_CUE_MS)); }
+      }
+      var firing = (fireState === 'firing');
+
       var theme = themeSel.value;
       var brightness = parseInt(brightInput.value, 10);
 
       for (var i = 0; i < 4; i++) {
         var f = renderTheme(theme, i, simNowMs, brightness);
-        var lc = lampColor(f.r, f.g, f.b, f.w, f.on);
-        lamps[i].style.background = lc.bg;
-        lamps[i].style.boxShadow = lc.glow;
-        chs[i].textContent = 'R=' + f.r + ' G=' + f.g + ' B=' + f.b + ' W=' + f.w;
+
+        // Uplight: full RGBW; end-cue white flash overlays the white channel.
+        var upW = Math.max(f.w, endCueFade);
+        paint(uplights[i], lampColor(f.r, f.g, f.b, upW, f.on || upW > 0));
+
+        // Strips: RGB-only, capped, no white channel and no end-cue flash.
+        var sr = Math.round(f.r * STRIP_PCT);
+        var sg = Math.round(f.g * STRIP_PCT);
+        var sb = Math.round(f.b * STRIP_PCT);
+        paint(strips[i], lampColor(sr, sg, sb, 0, sr + sg + sb > 0));
+
+        valves[i].classList.toggle('firing', firing);
+        chs[i].textContent = 'uplight R=' + f.r + ' G=' + f.g + ' B=' + f.b + ' W=' + upW;
       }
+
+      confluence.classList.toggle('firing', firing);
+      cfState.textContent = firing ? 'FIRING' : (fireState === 'endcue' ? 'end cue' : 'idle');
 
       requestAnimationFrame(tick);
     }
@@ -398,6 +551,25 @@
       playBtn.textContent = playing ? 'Pause' : 'Play';
       playBtn.classList.toggle('muted', !playing);
     });
+
+    // -- Fire button: press & hold (mirrors the real Test Fire) --
+    var fireBtn = document.getElementById('fireBtn');
+    function fireStart(e) {
+      e.preventDefault();
+      fireState = 'firing';
+      fireBtn.classList.add('firing');
+    }
+    function fireEnd(e) {
+      if (e) e.preventDefault();
+      if (fireState === 'firing') { fireState = 'endcue'; endcueStartMs = performance.now(); }
+      fireBtn.classList.remove('firing');
+    }
+    fireBtn.addEventListener('mousedown', fireStart);
+    fireBtn.addEventListener('mouseup', fireEnd);
+    fireBtn.addEventListener('mouseleave', fireEnd);
+    fireBtn.addEventListener('touchstart', fireStart, { passive: false });
+    fireBtn.addEventListener('touchend', fireEnd, { passive: false });
+    fireBtn.addEventListener('touchcancel', fireEnd, { passive: false });
 
     // ---- Push current preview to the device (or mock) as target=all ----
     // POSTs the same theme/brightness/speed/flameLevel to /set that the main

@@ -30,3 +30,12 @@ void buttonInjectReset();    // force FSM back to IDLE (skips cooldown for tests
 bool buttonConsumePress();   // main loop: returns + clears pending press
 bool buttonConsumeRelease(); // main loop: returns + clears pending release
 bool buttonVirtualHeld();    // sticky held flag from inject press/release
+
+// --- Purge / empty-accumulator overlay ---
+// Independent of the FSM: while active, the main loop holds every tower
+// accumulator valve AND the central Confluence solenoid fully open, with no
+// duration limit and no cooldown, until purgeStop() is called (button release).
+// Used by /api/purge/start|stop and the web UI "Empty Accumulator" tab.
+void purgeStart();
+void purgeStop();
+bool purgeActive();

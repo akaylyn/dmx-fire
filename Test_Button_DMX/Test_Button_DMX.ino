@@ -74,6 +74,10 @@ void loop() {
 
   // DMX output — 50 Hz
   EVERY_N_MILLISECONDS(20) {
+    // Purge overlay: held-open "empty the accumulator" action, independent of
+    // the FSM. Bypasses fireDurationMs and cooldown entirely.
+    bool purge = purgeActive();
+
     for (uint8_t i = 0; i < NUM_TOWERS; i++) {
       if (!towerConfigs[i].connected) continue;
 
@@ -99,12 +103,17 @@ void loop() {
           break;  // IDLE / COOLDOWN: theme only
       }
 
+      // Purge wins over the FSM: hold this tower's accumulator valve fully open.
+      if (purge) state.fire = towerConfigs[i].flameLevel;
+
       towerWrite(i, state);
     }
 
     if (confluenceConfig.connected) {
       uint8_t cfLevel = 0;
-      if (morseActive()) {
+      if (purge) {
+        cfLevel = confluenceConfig.fireLevel;
+      } else if (morseActive()) {
         cfLevel = morseTick();
       } else if (fsmState == FSM_FIRE_ACTIVE) {
         if (buttonConfig.mode == 2) {

@@ -103,6 +103,7 @@ Tower 3:     CH 50–64  (decoder A050 fire=CH53; uplight A054)
 **Web server (`web.cpp`)** — serves a tabbed mobile config UI + REST API:
 - `GET /api/state` — JSON snapshot: `boot_id`, FSM state, per-tower config (`theme`/`brightness`/`speed`/`flameLevel`), full DMX frame
 - `POST /api/button/press|release|reset` — virtual button injection for tests
+- `POST /api/purge/start|stop` — Empty Accumulator: hold every tower valve + Confluence solenoid open while pressed, bypassing the FSM (no `fireDurationMs` limit, no cooldown). Exposed as `purge` in `/api/state`.
 - `POST /api/morse|/api/morse/stop` — Morse playback
 - `POST /api/captive/dismiss` — turn off the captive-portal redirect so the OS popup closes and the operator can switch to a real browser (RAM-only flag, resets each boot). OS probe URLs (`/hotspot-detect.html`, `/generate_204`, `/ncsi.txt`, …) return success once dismissed.
 

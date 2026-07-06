@@ -12,6 +12,10 @@ static volatile bool g_pendingPress   = false;
 static volatile bool g_pendingRelease = false;
 static volatile bool g_virtualHeld    = false;
 
+// Purge overlay flag — set by purgeStart(), cleared by purgeStop(). Read every
+// frame in the main loop to force all valves open, bypassing the FSM entirely.
+static volatile bool g_purgeActive    = false;
+
 const char* fsmStateName(FsmState s) {
   switch (s) {
     case FSM_IDLE:        return "IDLE";
@@ -104,4 +108,20 @@ bool buttonConsumeRelease() {
 
 bool buttonVirtualHeld() {
   return g_virtualHeld;
+}
+
+// --- Purge / empty-accumulator overlay ---
+
+void purgeStart() {
+  g_purgeActive = true;
+  LOG_I("[PURGE] start — all valves held open");
+}
+
+void purgeStop() {
+  g_purgeActive = false;
+  LOG_I("[PURGE] stop — valves closed");
+}
+
+bool purgeActive() {
+  return g_purgeActive;
 }

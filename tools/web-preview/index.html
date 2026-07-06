@@ -287,7 +287,7 @@
     }
     .arm-row.is-armed .arm-state { background: var(--accent) }
 
-    #testFireBtn {
+    #testFireBtn, #purgeBtn {
       display: block;
       width: 100%;
       padding: 48px 24px;
@@ -305,13 +305,18 @@
       min-height: 160px;
       transition: background 0.15s, box-shadow 0.15s, opacity 0.15s;
     }
-    #testFireBtn:active {
+    #testFireBtn:active, #purgeBtn:active {
       background: var(--accent-dark);
       box-shadow: 0 0 0 var(--accent-dark);
       transform: translateY(4px);
     }
+    /* Purge button: amber, not red — distinct from the fire button so the two
+       hold-to-act controls aren't confused. Still a danger action (releases
+       propane), so it keeps the same heavy hold styling. */
+    #purgeBtn { background: #d67d00; box-shadow: 0 4px 0 #8a5100; }
+    #purgeBtn:active { background: #8a5100; box-shadow: 0 0 0 #8a5100; }
     /* Disarmed state: cover is closed — button is visibly inert. */
-    #testFireBtn.disarmed {
+    #testFireBtn.disarmed, #purgeBtn.disarmed {
       background: repeating-linear-gradient(
         135deg,
         #999 0 16px,
@@ -321,7 +326,7 @@
       box-shadow: 0 4px 0 #555;
       cursor: not-allowed;
     }
-    #testFireBtn.disarmed:active {
+    #testFireBtn.disarmed:active, #purgeBtn.disarmed:active {
       background: repeating-linear-gradient(
         135deg,
         #999 0 16px,
@@ -330,7 +335,7 @@
       box-shadow: 0 4px 0 #555;
       transform: none;
     }
-    #testFireBtn small {
+    #testFireBtn small, #purgeBtn small {
       display: block;
       margin-top: 8px;
       font-size: 0.8rem;
@@ -502,6 +507,7 @@
     <h1>DMX Fire <!-- DEV-ONLY-START --><a href='/simulator' style='float:right;font-size:0.75rem;font-weight:500;color:var(--muted);text-decoration:none;margin-top:4px'>Theme simulator &rarr;</a><!-- DEV-ONLY-END --></h1>
     <nav class='tabs' id='tabs' role='tablist'>
       <button type='button' class='active' data-tab='test-fire' role='tab'>Test Fire</button>
+      <button type='button' data-tab='purge' role='tab'>Empty Accum.</button>
       <button type='button' data-tab='button' role='tab'>Button Config</button>
       <button type='button' data-tab='morse' role='tab'>Morse</button>
       <button type='button' data-tab='confluence' role='tab'>Confluence</button>
@@ -541,6 +547,20 @@
         <button type='button' id='browserEscapeClose'>Got it</button>
       </div>
     </div>
+
+    <!-- ===== EMPTY ACCUMULATOR (PURGE) ===== -->
+    <section class='tab' data-tab='purge' role='tabpanel' hidden>
+      <h2>Empty Accumulator</h2>
+      <div class='testfire-wrap'>
+        <div class='arm-row' id='purgeArmRow'>
+          <input type='checkbox' id='purgeArmToggle'>
+          <label for='purgeArmToggle'>Cover open &mdash; armed</label>
+          <span class='arm-state' id='purgeArmState'>Safe</span>
+        </div>
+        <button type='button' id='purgeBtn' class='disarmed'>DISARMED<small>open the cover above to arm</small></button>
+        <p class='testfire-hint'>Holds <strong>every tower valve and the central Confluence solenoid</strong> open for as long as you hold &mdash; no time limit, no cooldown. Release to close. Cover resets to closed on every page load.</p>
+      </div>
+    </section>
 
     <!-- ===== BUTTON CONFIG ===== -->
     <section class='tab' data-tab='button' role='tabpanel' hidden>
@@ -861,81 +881,101 @@
       });
     });
 
-    // ---- Test Fire button: press & hold to fire; gated by Arm toggle ----
+    // ---- Press-&-hold action buttons gated by an Arm toggle ----
+    // Shared by the Test Fire button and the Empty Accumulator (purge) button.
     // The Arm checkbox models a protective flip-cover. State is persisted in
     // localStorage *fingerprinted by the device's boot_id*, so the cover stays
     // open across page reloads on the same boot but re-closes whenever the
-    // device reboots (boot_id changes → stale armed state is discarded).
+    // device reboots (boot_id changes → stale armed state is discarded). Each
+    // button keeps its own arm state under its own key.
     (function () {
-      var b = document.getElementById('testFireBtn');
-      var arm = document.getElementById('armToggle');
-      var row = document.getElementById('armRow');
-      var state = document.getElementById('armState');
-      if (!b || !arm) return;
+      function setupHold(o) {
+        var b = document.getElementById(o.btn);
+        var arm = document.getElementById(o.arm);
+        var row = document.getElementById(o.row);
+        var state = document.getElementById(o.state);
+        if (!b || !arm) return null;
 
-      var ARM_KEY = 'dmxFireArm';
-      var armed = false;
+        var armed = false;
 
-      function render() {
-        arm.checked = armed;
-        b.classList.toggle('disarmed', !armed);
-        b.innerHTML = armed
-          ? 'PRESS &amp; HOLD<br>TO FIRE'
-          : 'DISARMED<small>open the cover above to arm</small>';
-        if (row) row.classList.toggle('is-armed', armed);
-        if (state) state.textContent = armed ? 'Armed' : 'Safe';
-      }
-
-      function setArmed(on, opts) {
-        var prev = armed;
-        armed = !!on;
-        render();
-        try {
-          if (armed && window._dmxBootId) {
-            localStorage.setItem(ARM_KEY, JSON.stringify({ armed: true, bootId: window._dmxBootId }));
-          } else {
-            localStorage.removeItem(ARM_KEY);
-          }
-        } catch (e) {}
-        // If we just disarmed mid-press, send a release so the device can't latch on.
-        if (prev && !armed && !(opts && opts.silent)) {
-          fetch('/api/button/release', { method: 'POST' }).catch(function () {});
+        function render() {
+          arm.checked = armed;
+          b.classList.toggle('disarmed', !armed);
+          b.innerHTML = armed
+            ? o.armedHtml
+            : 'DISARMED<small>open the cover above to arm</small>';
+          if (row) row.classList.toggle('is-armed', armed);
+          if (state) state.textContent = armed ? 'Armed' : 'Safe';
         }
+
+        function setArmed(on, opts) {
+          var prev = armed;
+          armed = !!on;
+          render();
+          try {
+            if (armed && window._dmxBootId) {
+              localStorage.setItem(o.key, JSON.stringify({ armed: true, bootId: window._dmxBootId }));
+            } else {
+              localStorage.removeItem(o.key);
+            }
+          } catch (e) {}
+          // If we just disarmed mid-press, send a release so the device can't latch on.
+          if (prev && !armed && !(opts && opts.silent)) {
+            fetch(o.releaseUrl, { method: 'POST' }).catch(function () {});
+          }
+        }
+
+        // Default disarmed until we confirm the saved state belongs to this boot.
+        setArmed(false, { silent: true });
+        arm.addEventListener('change', function () { setArmed(arm.checked); });
+
+        var post = function (p) { fetch(p, { method: 'POST' }); };
+        var press = function (e) {
+          if (!armed) { e.preventDefault(); return; }
+          e.preventDefault();
+          post(o.pressUrl);
+        };
+        var release = function (e) {
+          if (!armed) { e.preventDefault(); return; }
+          e.preventDefault();
+          post(o.releaseUrl);
+        };
+        b.addEventListener('mousedown', press);
+        b.addEventListener('mouseup', release);
+        b.addEventListener('mouseleave', release);
+        b.addEventListener('touchstart', press, { passive: false });
+        b.addEventListener('touchend', release, { passive: false });
+        b.addEventListener('touchcancel', release, { passive: false });
+
+        // Restore armed state once boot_id is known (called after /api/state).
+        return function restore() {
+          var saved = null;
+          try { saved = JSON.parse(localStorage.getItem(o.key) || 'null'); } catch (e) {}
+          if (saved && saved.armed && window._dmxBootId && saved.bootId === window._dmxBootId) {
+            setArmed(true, { silent: true });
+          } else {
+            // Stale (device rebooted) or absent — drop it.
+            try { localStorage.removeItem(o.key); } catch (e) {}
+          }
+        };
       }
 
-      // Default disarmed until we confirm the saved state belongs to this boot.
-      setArmed(false, { silent: true });
-      arm.addEventListener('change', function () { setArmed(arm.checked); });
+      var restoreFire = setupHold({
+        btn: 'testFireBtn', arm: 'armToggle', row: 'armRow', state: 'armState',
+        key: 'dmxFireArm', pressUrl: '/api/button/press', releaseUrl: '/api/button/release',
+        armedHtml: 'PRESS &amp; HOLD<br>TO FIRE'
+      });
+      var restorePurge = setupHold({
+        btn: 'purgeBtn', arm: 'purgeArmToggle', row: 'purgeArmRow', state: 'purgeArmState',
+        key: 'dmxFirePurgeArm', pressUrl: '/api/purge/start', releaseUrl: '/api/purge/stop',
+        armedHtml: 'PRESS &amp; HOLD<br>TO EMPTY'
+      });
 
       fetch('/api/state').then(function (r) { return r.json(); }).then(function (s) {
         window._dmxBootId = s.boot_id || null;
-        var saved = null;
-        try { saved = JSON.parse(localStorage.getItem(ARM_KEY) || 'null'); } catch (e) {}
-        if (saved && saved.armed && window._dmxBootId && saved.bootId === window._dmxBootId) {
-          setArmed(true, { silent: true });
-        } else {
-          // Stale (device rebooted) or absent — drop it.
-          try { localStorage.removeItem(ARM_KEY); } catch (e) {}
-        }
+        if (restoreFire) restoreFire();
+        if (restorePurge) restorePurge();
       }).catch(function () { /* stay disarmed if /api/state is unreachable */ });
-
-      var post = function (p) { fetch(p, { method: 'POST' }); };
-      var press = function (e) {
-        if (!armed) { e.preventDefault(); return; }
-        e.preventDefault();
-        post('/api/button/press');
-      };
-      var release = function (e) {
-        if (!armed) { e.preventDefault(); return; }
-        e.preventDefault();
-        post('/api/button/release');
-      };
-      b.addEventListener('mousedown', press);
-      b.addEventListener('mouseup', release);
-      b.addEventListener('mouseleave', release);
-      b.addEventListener('touchstart', press, { passive: false });
-      b.addEventListener('touchend', release, { passive: false });
-      b.addEventListener('touchcancel', release, { passive: false });
     })();
 
     // ---- Show "Machine gun burst" slider only when Mode == Machine Gun (2) ----

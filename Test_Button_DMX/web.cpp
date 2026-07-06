@@ -175,18 +175,20 @@ static String buildPage() {
          ".arm-row .arm-state{font-size:.8rem;font-weight:700;text-transform:uppercase;"
          "letter-spacing:.06em;padding:4px 10px;border-radius:999px;background:var(--muted);color:#fff}"
          ".arm-row.is-armed .arm-state{background:var(--accent)}"
-         "#testFireBtn{display:block;width:100%;padding:48px 24px;font-size:1.3rem;font-weight:700;"
+         "#testFireBtn,#purgeBtn{display:block;width:100%;padding:48px 24px;font-size:1.3rem;font-weight:700;"
          "background:var(--accent);color:#fff;border:0;border-radius:14px;cursor:pointer;"
          "user-select:none;-webkit-user-select:none;touch-action:none;"
          "box-shadow:0 4px 0 var(--accent-dark);min-height:160px;"
          "transition:background .15s,box-shadow .15s,opacity .15s}"
-         "#testFireBtn:active{background:var(--accent-dark);box-shadow:0 0 0 var(--accent-dark);"
+         "#testFireBtn:active,#purgeBtn:active{background:var(--accent-dark);box-shadow:0 0 0 var(--accent-dark);"
          "transform:translateY(4px)}"
-         "#testFireBtn.disarmed{background:repeating-linear-gradient(135deg,#999 0 16px,#777 16px 32px);"
+         "#purgeBtn{background:#d67d00;box-shadow:0 4px 0 #8a5100}"
+         "#purgeBtn:active{background:#8a5100;box-shadow:0 0 0 #8a5100}"
+         "#testFireBtn.disarmed,#purgeBtn.disarmed{background:repeating-linear-gradient(135deg,#999 0 16px,#777 16px 32px);"
          "color:rgba(255,255,255,.85);box-shadow:0 4px 0 #555;cursor:not-allowed}"
-         "#testFireBtn.disarmed:active{background:repeating-linear-gradient(135deg,#999 0 16px,#777 16px 32px);"
+         "#testFireBtn.disarmed:active,#purgeBtn.disarmed:active{background:repeating-linear-gradient(135deg,#999 0 16px,#777 16px 32px);"
          "box-shadow:0 4px 0 #555;transform:none}"
-         "#testFireBtn small{display:block;margin-top:8px;font-size:.8rem;font-weight:600;opacity:.85}"
+         "#testFireBtn small,#purgeBtn small{display:block;margin-top:8px;font-size:.8rem;font-weight:600;opacity:.85}"
          ".testfire-hint{text-align:center;color:var(--muted);font-size:.9rem;margin:4px 0 0}"
          ".escape-portal{margin-top:20px;padding-top:16px;border-top:1px dashed var(--line);text-align:center}"
          ".escape-portal p{margin:0 0 10px;font-size:.85rem;color:var(--muted)}"
@@ -232,6 +234,7 @@ static String buildPage() {
   s += F("<header><h1>DMX Fire</h1>"
          "<nav class='tabs' id='tabs' role='tablist'>"
          "<button type='button' class='active' data-tab='test-fire' role='tab'>Test Fire</button>"
+         "<button type='button' data-tab='purge' role='tab'>Empty Accum.</button>"
          "<button type='button' data-tab='button' role='tab'>Button Config</button>"
          "<button type='button' data-tab='morse' role='tab'>Morse</button>"
          "<button type='button' data-tab='confluence' role='tab'>Confluence</button>"
@@ -267,6 +270,20 @@ static String buildPage() {
          "<button type='button' id='browserEscapeClose'>Got it</button>"
          "</div>"
          "</div>");
+
+  // --- Empty Accumulator (purge) tab ---
+  s += F("<section class='tab' data-tab='purge' role='tabpanel' hidden>"
+         "<h2>Empty Accumulator</h2>"
+         "<div class='testfire-wrap'>"
+         "<div class='arm-row' id='purgeArmRow'>"
+         "<input type='checkbox' id='purgeArmToggle'>"
+         "<label for='purgeArmToggle'>Cover open &mdash; armed</label>"
+         "<span class='arm-state' id='purgeArmState'>Safe</span>"
+         "</div>"
+         "<button type='button' id='purgeBtn' class='disarmed'>DISARMED<small>open the cover above to arm</small></button>"
+         "<p class='testfire-hint'>Holds <strong>every tower valve and the central Confluence solenoid</strong> open for as long as you hold &mdash; no time limit, no cooldown. Release to close. Cover resets to closed on every page load.</p>"
+         "</div>"
+         "</section>");
 
   // --- Button Config tab ---
   s += F("<section class='tab' data-tab='button' role='tabpanel' hidden>"
@@ -410,33 +427,39 @@ static String buildPage() {
          "e.addEventListener('change',function(){fetch('/set',{method:'POST',body:new FormData(f)});});});"
          "f.addEventListener('submit',function(ev){ev.preventDefault();"
          "fetch('/set',{method:'POST',body:new FormData(f)});});});"
-         "(function(){var b=document.getElementById('testFireBtn');"
-         "var ar=document.getElementById('armToggle');"
-         "var row=document.getElementById('armRow');"
-         "var st=document.getElementById('armState');"
-         "if(!b||!ar)return;var K='dmxFireArm';var on=false;"
+         "(function(){function setup(o){var b=document.getElementById(o.btn);"
+         "var ar=document.getElementById(o.arm);"
+         "var row=document.getElementById(o.row);"
+         "var st=document.getElementById(o.state);"
+         "if(!b||!ar)return null;var on=false;"
          "function r(){ar.checked=on;b.classList.toggle('disarmed',!on);"
-         "b.innerHTML=on?'PRESS &amp; HOLD<br>TO FIRE':'DISARMED<small>open the cover above to arm</small>';"
+         "b.innerHTML=on?o.armedHtml:'DISARMED<small>open the cover above to arm</small>';"
          "if(row)row.classList.toggle('is-armed',on);if(st)st.textContent=on?'Armed':'Safe';}"
-         "function set(v,o){var pv=on;on=!!v;r();try{if(on&&window._dmxBootId){"
-         "localStorage.setItem(K,JSON.stringify({armed:true,bootId:window._dmxBootId}));"
-         "}else{localStorage.removeItem(K);}}catch(e){}"
-         "if(pv&&!on&&!(o&&o.silent)){fetch('/api/button/release',{method:'POST'}).catch(function(){});}}"
+         "function set(v,opt){var pv=on;on=!!v;r();try{if(on&&window._dmxBootId){"
+         "localStorage.setItem(o.key,JSON.stringify({armed:true,bootId:window._dmxBootId}));"
+         "}else{localStorage.removeItem(o.key);}}catch(e){}"
+         "if(pv&&!on&&!(opt&&opt.silent)){fetch(o.releaseUrl,{method:'POST'}).catch(function(){});}}"
          "set(false,{silent:true});"
          "ar.addEventListener('change',function(){set(ar.checked);});"
-         "fetch('/api/state').then(function(x){return x.json();}).then(function(s){"
-         "window._dmxBootId=s.boot_id||null;var sv=null;"
-         "try{sv=JSON.parse(localStorage.getItem(K)||'null');}catch(e){}"
-         "if(sv&&sv.armed&&window._dmxBootId&&sv.bootId===window._dmxBootId){set(true,{silent:true});}"
-         "else{try{localStorage.removeItem(K);}catch(e){}}}).catch(function(){});"
          "var po=function(p){fetch(p,{method:'POST'});};"
-         "var pr=function(e){if(!on){e.preventDefault();return;}e.preventDefault();po('/api/button/press');};"
-         "var rl=function(e){if(!on){e.preventDefault();return;}e.preventDefault();po('/api/button/release');};"
+         "var pr=function(e){if(!on){e.preventDefault();return;}e.preventDefault();po(o.pressUrl);};"
+         "var rl=function(e){if(!on){e.preventDefault();return;}e.preventDefault();po(o.releaseUrl);};"
          "b.addEventListener('mousedown',pr);b.addEventListener('mouseup',rl);"
          "b.addEventListener('mouseleave',rl);"
          "b.addEventListener('touchstart',pr,{passive:false});"
          "b.addEventListener('touchend',rl,{passive:false});"
-         "b.addEventListener('touchcancel',rl,{passive:false});})();"
+         "b.addEventListener('touchcancel',rl,{passive:false});"
+         "return function(){var sv=null;try{sv=JSON.parse(localStorage.getItem(o.key)||'null');}catch(e){}"
+         "if(sv&&sv.armed&&window._dmxBootId&&sv.bootId===window._dmxBootId){set(true,{silent:true});}"
+         "else{try{localStorage.removeItem(o.key);}catch(e){}}};}"
+         "var rf=setup({btn:'testFireBtn',arm:'armToggle',row:'armRow',state:'armState',"
+         "key:'dmxFireArm',pressUrl:'/api/button/press',releaseUrl:'/api/button/release',"
+         "armedHtml:'PRESS &amp; HOLD<br>TO FIRE'});"
+         "var rp=setup({btn:'purgeBtn',arm:'purgeArmToggle',row:'purgeArmRow',state:'purgeArmState',"
+         "key:'dmxFirePurgeArm',pressUrl:'/api/purge/start',releaseUrl:'/api/purge/stop',"
+         "armedHtml:'PRESS &amp; HOLD<br>TO EMPTY'});"
+         "fetch('/api/state').then(function(x){return x.json();}).then(function(s){"
+         "window._dmxBootId=s.boot_id||null;if(rf)rf();if(rp)rp();}).catch(function(){});})();"
          "(function(){var sel=document.getElementById('modeSelect');"
          "var row=document.getElementById('mgRow');if(!sel||!row)return;"
          "sel.addEventListener('change',function(){row.style.display=sel.value==='2'?'':'none';});})();"
@@ -539,6 +562,20 @@ static void handleApiReset() {
   server.send(200);
 }
 
+// Empty-accumulator purge: hold every valve open while the web UI button is
+// held. Independent of the FSM — no duration limit, no cooldown.
+static void handleApiPurgeStart() {
+  LOG_I("[WEB] POST /api/purge/start");
+  purgeStart();
+  server.send(200);
+}
+
+static void handleApiPurgeStop() {
+  LOG_I("[WEB] POST /api/purge/stop");
+  purgeStop();
+  server.send(200);
+}
+
 static void handleApiMorse() {
   String text = server.arg("text");
   if (server.hasArg("unitMs")) {
@@ -631,6 +668,9 @@ static void handleApiState() {
   s += fsmElapsedMs();
   s += '}';
 
+  s += F(",\"purge\":");
+  s += (purgeActive() ? F("true") : F("false"));
+
   s += F(",\"button\":{\"mode\":");
   s += buttonConfig.mode;
   s += F(",\"fireDurationMs\":");
@@ -722,6 +762,8 @@ void webSetup() {
   server.on("/api/button/press",     HTTP_POST, handleApiPress);
   server.on("/api/button/release",   HTTP_POST, handleApiRelease);
   server.on("/api/button/reset",     HTTP_POST, handleApiReset);
+  server.on("/api/purge/start",      HTTP_POST, handleApiPurgeStart);
+  server.on("/api/purge/stop",       HTTP_POST, handleApiPurgeStop);
   server.on("/api/morse",            HTTP_POST, handleApiMorse);
   server.on("/api/morse/stop",       HTTP_POST, handleApiMorseStop);
   server.on("/api/captive/dismiss",  HTTP_POST, handleApiCaptiveDismiss);

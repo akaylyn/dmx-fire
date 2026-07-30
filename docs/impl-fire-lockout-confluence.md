@@ -2,13 +2,20 @@
 
 Implements phases 1–4 of `spec-fire-lockout-confluence.md`.
 
+> **Later changes.** The Confluence solenoid moved to **CH1** (3-channel decoder at A001,
+> solenoid on its first output) — see [spec-confluence-addressing.md](spec-confluence-addressing.md).
+> The tower uplights moved to **4-channel mode** — see [spec-uplight-4ch-mode.md](spec-uplight-4ch-mode.md).
+> Fire and white were also split onto separate channels — see
+> [spec-tower-fixtures-fire-white.md](spec-tower-fixtures-fire-white.md). Channel numbers here
+> have been corrected; the FSM table below is flagged where it still describes original behaviour.
+
 ---
 
 ## New files
 
 ### `confluence.h` / `confluence.cpp`
 
-Owns the `ConfluenceConfig` struct (`connected`, `fireLevel`) and `confluenceWrite(level)`. Writes to DMX ch 1–4; only ch 4 opens the solenoid. CH1–3 are zero-filled (wired but ignored by the fixture).
+Owns the `ConfluenceConfig` struct (`connected`, `fireLevel`) and `confluenceWrite(level)`. Writes to DMX ch 1–4; only ch 1 opens the solenoid. CH2–3 are zero-filled (unwired decoder outputs) and CH4 is zero-filled (unclaimed by any fixture).
 
 Defaults: `connected=true`, `fireLevel=255`.
 
@@ -55,7 +62,7 @@ Keys (all ≤ 15 chars):
 
 Added `flameLevel` field to `TowerConfig`:
 ```cpp
-uint8_t flameLevel;  // 0=off, 255=full open; written to decoder CH4 (W) during fire
+uint8_t flameLevel;  // 0=off, 255=full open; written to decoder CH4 during fire
 ```
 
 ### `towers.cpp`
@@ -89,28 +96,41 @@ dmxSetup() → towerSetup() → confluenceSetup() → buttonFsmSetup() → stora
 
 `loop()` DMX block (50 Hz) is now FSM-driven:
 
-| FSM state | Tower DMX | Confluence CH4 |
+| FSM state | Tower DMX | Confluence CH1 |
 |-----------|-----------|----------------|
 | `FSM_IDLE` / `FSM_COOLDOWN` | idle palette + `bright` → CH1–3, `bright` → CH4 | 0 |
 | `FSM_FIRE_ACTIVE` | fire palette (`firepal`) → CH1–3, `flameLevel` → CH4 | `fireLevel` |
 | `FSM_END_CUE` | 0 → CH1–3, linear fade 255→0 over 1 s → CH4 | 0 |
 
+> The **Tower DMX** column above describes the original behaviour, where the decoder's CH4
+> carried white *and* the valve. Fire and white are now separate channels: CH4 is the valve
+> only (`flameLevel` during `FIRE_ACTIVE`/purge, 0 otherwise) and the end-cue white fade drives
+> the uplight's white channel instead. See
+> [spec-tower-fixtures-fire-white.md](spec-tower-fixtures-fire-white.md).
+
 Onboard ATOM LED reflects state: rainbow (idle) / red (fire) / white (end cue) / amber (cooldown).
 
 ---
 
-## DMX universe map (post-implementation)
+## DMX universe map (current)
 
 ```
-ch  1– 4   Confluence  (ch 4 = solenoid; ch 1–3 written as 0)
-ch  5– 8   Tower 0 decoder  (R, G, B, W/flame)
-ch  9–19   Tower 0 strobe   (11ch LaluceNatz mode)
+ch  1– 4   Confluence       (ch 1 = solenoid; ch 2–4 written as 0)
+ch  5– 8   Tower 0 decoder  (strip R, G, B, FIRE valve)
+ch  9–12   Tower 0 uplight  (4ch LaluceNatz: R, G, B, W)
+ch 13–19   unclaimed        (written as 0)
 ch 20–23   Tower 1 decoder
-ch 24–34   Tower 1 strobe
+ch 24–27   Tower 1 uplight
+ch 28–34   unclaimed
 ch 35–38   Tower 2 decoder
-ch 39–49   Tower 2 strobe
+ch 39–42   Tower 2 uplight
+ch 43–49   unclaimed
 ch 50–53   Tower 3 decoder
-ch 54–64   Tower 3 strobe
+ch 54–57   Tower 3 uplight
+ch 58–64   unclaimed
 ```
 
-Total: 64 channels (`NUM_CHANNELS = 64` unchanged).
+Valve channels: **1, 8, 23, 38, 53**. Total: 64 channels (`NUM_CHANNELS = 64` unchanged).
+
+The 15-channel stride per tower is retained from the 11-channel uplight era so every fixture
+keeps its existing start address — see [spec-uplight-4ch-mode.md](spec-uplight-4ch-mode.md).

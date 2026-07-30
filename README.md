@@ -65,12 +65,17 @@ Per-tower idle visuals. Gradient fire (`green`, `blue`, `fire` — flash 800 ms 
 
 ## DMX universe (64 channels)
 
-Confluence on ch 1–4; each tower a 15-channel block (decoder + uplight). **Fire (decoder CH4) and white (uplight white channel) are independent** — fire without white, white without fire. Full channel map in `docs/hardware.md`.
+Confluence on ch 1–4 (3-channel decoder at A001, **solenoid on ch 1**); each tower gets a 15-channel stride holding a 4-channel decoder plus a 4-channel uplight, leaving 7 unclaimed channels that are driven to 0. **Fire (decoder CH4) and white (uplight CH4) are independent** — fire without white, white without fire. Full channel map in `docs/hardware.md`.
 
 ```
-Confluence: ch 1–4    (ch 4 = central valve)
-Tower 0:    ch 5–19    Tower 1: ch 20–34    Tower 2: ch 35–49    Tower 3: ch 50–64
+Confluence: ch 1–4     (ch 1 = central valve; ch 2–4 unclaimed)
+Tower 0:    ch  5–19   decoder  5– 8 (fire= 8), uplight  9–12, 13–19 unclaimed
+Tower 1:    ch 20–34   decoder 20–23 (fire=23), uplight 24–27, 28–34 unclaimed
+Tower 2:    ch 35–49   decoder 35–38 (fire=38), uplight 39–42, 43–49 unclaimed
+Tower 3:    ch 50–64   decoder 50–53 (fire=53), uplight 54–57, 58–64 unclaimed
 ```
+
+Valve channels: **1, 8, 23, 38, 53**. Uplights run in 4-channel mode (R/G/B/W) — all four must be in the *same* mode; mixed 4-ch/8-ch caused inconsistent per-tower behaviour in the field.
 
 ## Button behaviour
 

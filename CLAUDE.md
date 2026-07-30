@@ -73,17 +73,21 @@ This is an Arduino sketch (`Test_Button_DMX/`) running on an M5AtomS3 Lite (ESP3
 
 ### DMX Universe Layout
 
-Each tower has **two fixtures** sharing one config: an accumulator **decoder** (RGB strips + fire valve on CH4) and an **uplight** (LaluceNatz LL960S in 11-channel mode — full theme colour + a dedicated white channel).
+Each tower has **two fixtures** sharing one config: an accumulator **decoder** (RGB strips + fire valve on CH4) and an **uplight** (LaluceNatz LL960S in **4-channel mode** — R/G/B/W linear dimming).
 
 ```
-Confluence:  CH  1– 4  (CH4 = central solenoid valve)
-Tower 0:     CH  5–19  (decoder A005: RGB strips CH5–7 + FIRE CH8; uplight A009: CH9–19)
-Tower 1:     CH 20–34  (decoder A020 fire=CH23; uplight A024)
-Tower 2:     CH 35–49  (decoder A035 fire=CH38; uplight A039)
-Tower 3:     CH 50–64  (decoder A050 fire=CH53; uplight A054)
+Confluence:  CH  1– 4  (CH1 = central solenoid valve; 3-ch decoder at A001)
+Tower 0:     CH  5–19  (decoder A005: strips CH5–7 + FIRE CH8; uplight A009: CH9–12; CH13–19 unclaimed)
+Tower 1:     CH 20–34  (decoder A020 fire=CH23; uplight A024: CH24–27; CH28–34 unclaimed)
+Tower 2:     CH 35–49  (decoder A035 fire=CH38; uplight A039: CH39–42; CH43–49 unclaimed)
+Tower 3:     CH 50–64  (decoder A050 fire=CH53; uplight A054: CH54–57; CH58–64 unclaimed)
 ```
 
-**Fire and white are independent channels.** The decoder's CH4 is the fire valve (only opened during `FIRE_ACTIVE`); the uplight's white channel (CH11 of its block) is driven by themes/end-cue. Firing never lights white; white never opens a valve. Accumulator strip RGB is capped (75%, `STRIP_BRIGHTNESS_PCT` in `towers.cpp`) to protect the old, power-limited strips; the uplight runs full brightness.
+Valve channels: **1** (Confluence), **8 / 23 / 38 / 53** (towers). The 15-channel stride is kept even though only 8 channels per tower are claimed, so every fixture keeps its existing start address — see `docs/spec-uplight-4ch-mode.md`. All unclaimed channels are driven to 0 every frame so no stale byte can sit next to a valve channel.
+
+**Fire and white are independent channels.** The decoder's CH4 is the fire valve (only opened during `FIRE_ACTIVE`); the uplight's white is CH4 of its own block, driven by themes/end-cue. Firing never lights white; white never opens a valve. Accumulator strip RGB is capped (75%, `STRIP_BRIGHTNESS_PCT` in `towers.cpp`) to protect the old, power-limited strips; the uplight runs full brightness.
+
+**4-channel mode has no master dimmer and no strobe gate.** Brightness is baked into the RGB/white values by `themeRender()`. `TowerState` therefore carries only `r/g/b/white/fire` — do not reintroduce `masterDim`/`rgbStrobe`/`wStrobe`, because in 4-channel mode those channel slots are Green and Blue.
 
 ### Key Subsystems
 
@@ -94,9 +98,9 @@ Tower 3:     CH 50–64  (decoder A050 fire=CH53; uplight A054)
 
 **Towers (`towers.h/.cpp`)** — per-tower config (theme, brightness, speed, flameLevel, connected); `towerWrite()` emits the decoder block (capped strip RGB + fire on CH4) and the uplight block (full RGB + white) each tick. Idle visuals come from `themeRender()`; `flameLevel` drives the fire valve during `FIRE_ACTIVE`.
 
-**Themes (`themes.h/.cpp`)** — `themeRender(name, index, nowMs, brightness, speedPct)` returns a `TowerState` (RGB + white + strobe control) per tower per frame. Eight themes: gradient fire (`green`/`blue`/`fire`, 800 ms ON / 3200 ms OFF flash cycle) and procedural (`simon`, `rainbow`, `warm_white`, `bright_white`, `candle`). `speedPct` (10–400, 100 = normal) scales time. White themes drive the uplight white channel. Mirrored in `tools/web-preview/simulator.html`'s `renderTheme()` — keep in lock-step.
+**Themes (`themes.h/.cpp`)** — `themeRender(name, index, nowMs, brightness, speedPct)` returns a `TowerState` (RGB + white + fire) per tower per frame, with brightness already applied. Eight themes: gradient fire (`green`/`blue`/`fire`, 800 ms ON / 3200 ms OFF flash cycle) and procedural (`simon`, `rainbow`, `warm_white`, `bright_white`, `candle`). `speedPct` (10–400, 100 = normal) scales time. White themes drive the uplight white channel. Mirrored in `tools/web-preview/simulator.html`'s `renderTheme()` — keep in lock-step.
 
-**Confluence (`confluence.h/.cpp`)** — central solenoid config; only CH4 matters. Fires when FSM is `FIRE_ACTIVE`, zero otherwise. Per-tower decoder CH4 valves fire in parallel.
+**Confluence (`confluence.h/.cpp`)** — central solenoid config; only CH1 matters (3-channel decoder at A001, solenoid on its first output). Fires when FSM is `FIRE_ACTIVE`, zero otherwise. Per-tower decoder CH4 valves fire in parallel. See `docs/spec-confluence-addressing.md`.
 
 **DMX shadow buffer (`dmx.h/.cpp`)** — `dmxLastFrame[64]` mirrors every byte written; exposed via `/api/state` for test assertions.
 

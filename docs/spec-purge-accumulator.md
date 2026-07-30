@@ -38,7 +38,7 @@ Inside the 50 Hz DMX block, `purgeActive()` is read once per frame as `purge`:
 - **Towers:** after the FSM switch, `if (purge) state.fire = towerConfigs[i].flameLevel;`
   — purge overrides whatever the FSM set, opening each tower's decoder CH4 valve.
   Colour/white are left as the theme rendered them (firing never forces white).
-- **Confluence:** `purge` is the highest-priority source for CH4, above Morse and
+- **Confluence:** `purge` is the highest-priority source for CH1, above Morse and
   `FSM_FIRE_ACTIVE`: `if (purge) cfLevel = confluenceConfig.fireLevel;`.
 
 Disconnected towers/confluence are skipped exactly as in the normal path.

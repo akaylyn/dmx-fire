@@ -68,16 +68,39 @@ Power supply (−) ──► Decoder GND
 
 ## DMX channel mapping (this project)
 
-The DMX output from the M5AtomS3 controller is:
+This project uses decoders in **two different roles**, wired and addressed differently. Getting
+them mixed up means either no fire or uncommanded fire, so check the role before setting an address.
 
-| DMX CH | Signal |
-|--------|--------|
-| 1 | Red |
-| 2 | Green |
-| 3 | Blue |
-| 4 | White strobe |
+### Role 1 — Confluence solenoid driver (×1)
 
-Set the decoder's start address to **1** to align with the controller output.
+A **3-channel** decoder at start address **A001**, listening on universe ch 1–3. The propane
+solenoid is wired to the decoder's **first output**; outputs 2 and 3 are unwired.
+
+| Decoder output | Universe CH | Signal |
+|----------------|-------------|--------|
+| 1 | **1** | **Propane solenoid** — `fireLevel` while firing, 0 otherwise |
+| 2 | 2 | unwired (written 0) |
+| 3 | 3 | unwired (written 0) |
+
+Universe ch 4 is claimed by no fixture and is written 0 every frame.
+
+### Role 2 — Accumulator decoders (×4, one per tower)
+
+**4-channel** decoders at start addresses **A005 / A020 / A035 / A050** (tower 0–3). Outputs 1–3
+drive the RGB LED strips wrapped around the accumulator tank; output 4 drives that tower's
+propane valve.
+
+| Decoder output | Signal | Notes |
+|----------------|--------|-------|
+| 1 | Strip Red | Capped to 75% (`STRIP_BRIGHTNESS_PCT`) — old, power-limited strips |
+| 2 | Strip Green | Capped |
+| 3 | Strip Blue | Capped |
+| 4 | **Propane valve** | `flameLevel` while firing/purging, 0 otherwise. **Never carries white.** |
+
+Resolved valve channels: tower 0 = ch 8, tower 1 = ch 23, tower 2 = ch 38, tower 3 = ch 53.
+
+> The tower **uplights** are not decoders — they are LaluceNatz LL960S fixtures in 4-channel mode
+> at A009 / A024 / A039 / A054. See [../hardware.md](../hardware.md) for the full universe map.
 
 ---
 

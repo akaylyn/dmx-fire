@@ -2,7 +2,7 @@
 
 ## Context
 
-The original FSM had two button modes: **Fireball** (mode 0, runs the full `fireDurationMs`) and **Party** (mode 1, fires while held, stops on release). Both open the propane solenoid (Confluence CH4) continuously for the duration of fire.
+The original FSM had two button modes: **Fireball** (mode 0, runs the full `fireDurationMs`) and **Party** (mode 1, fires while held, stops on release). Both open the propane solenoid (Confluence CH1) continuously for the duration of fire.
 
 For staccato effects — short rapid bursts that read more like punctuation than a sustained jet — neither mode works. This spec adds a third mode that pulses the solenoid on/off while the button is held.
 

@@ -5,7 +5,7 @@
 Each tower has **two DMX fixtures**, not one:
 
 1. **Accumulator decoder** — a 4-channel decoder. CH1–3 drive the RGB LED strips wrapped around the accumulator tank; **CH4 is the propane fire valve only**. The strips are RGB-only, old, and power-limited (sending full R+G+B for white overdraws the supply), so their colour is capped.
-2. **Uplight** — a LaluceNatz LL960S in 11-channel mode. Full theme colour on its RGB channels plus a **dedicated white channel** (CH11 of its block) that is safe to drive.
+2. **Uplight** — an RGBW fixture in **4-channel mode** (R/G/B/W linear dimming). Full theme colour on its RGB channels plus a **dedicated white channel** (CH4 of its block) that is safe to drive. Originally specced in 11-channel mode; see [spec-uplight-4ch-mode.md](spec-uplight-4ch-mode.md).
 
 Two problems this spec fixes:
 
@@ -18,14 +18,14 @@ Goal: **fire without white, white without fire**, and per-tower independent colo
 
 ## DMX address layout
 
-Central confluence solenoid occupies CH1–4 (CH4 = central valve). Each tower then gets a contiguous 15-channel block at `base = 4 + index × 15`: 4-ch decoder followed by 11-ch uplight.
+Central confluence solenoid occupies CH1–4 (**CH1 = central valve**; 3-channel decoder at A001). Each tower then gets a 15-channel stride at `base = 4 + index × 15`: a 4-ch decoder followed by a 4-ch uplight, leaving 7 unclaimed channels driven to 0.
 
-| Tower | Block | Decoder (set fixture to) | Fire valve | Uplight (set fixture to, 11-ch) |
-|---|---|---|---|---|
-| 0 | CH 5–19 | **A005** | CH8 | **A009** |
-| 1 | CH 20–34 | **A020** | CH23 | **A024** |
-| 2 | CH 35–49 | **A035** | CH38 | **A039** |
-| 3 | CH 50–64 | **A050** | CH53 | **A054** |
+| Tower | Stride | Decoder (set fixture to) | Fire valve | Uplight (set fixture to, 4-ch) | Unclaimed |
+|---|---|---|---|---|---|
+| 0 | CH 5–19 | **A005** | CH8 | **A009** (CH 9–12) | CH 13–19 |
+| 1 | CH 20–34 | **A020** | CH23 | **A024** (CH 24–27) | CH 28–34 |
+| 2 | CH 35–49 | **A035** | CH38 | **A039** (CH 39–42) | CH 43–49 |
+| 3 | CH 50–64 | **A050** | CH53 | **A054** (CH 54–57) | CH 58–64 |
 
 `towerWrite()` (`towers.cpp`) writes both blocks from one `TowerState`. The web UI prints these addresses in each Tower Configs sub-tab and the Apply-to-All panel.
 
@@ -37,7 +37,7 @@ Central confluence solenoid occupies CH1–4 (CH4 = central valve). Each tower t
 - base+1..3: strip R/G/B, scaled by `STRIP_BRIGHTNESS_PCT` (75%) to protect the old strips. Full white (all three channels) is the worst-case draw, so this ceiling bounds every theme.
 - base+4: `state.fire` — the propane valve. Set only by the FSM (`flameLevel` during `FIRE_ACTIVE`), 0 otherwise. Never carries white.
 
-**Uplight (base+5 … base+15):** full theme RGB on its R/G/B, `state.white` on the white dimmer (CH11), `masterDim=255`, `rgbStrobe=1`. White is independent of fire.
+**Uplight (base+5 … base+8):** full theme RGB on its R/G/B and `state.white` on its W, in 4-channel mode. White is independent of fire. Channels base+9 … base+15 are unclaimed and driven to 0. See [spec-uplight-4ch-mode.md](spec-uplight-4ch-mode.md).
 
 ### `TowerState` (`towers.h`)
 

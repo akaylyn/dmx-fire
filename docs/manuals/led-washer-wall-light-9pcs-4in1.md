@@ -45,7 +45,9 @@ A multi-LED RGBW wall washer fixture containing 9 RGBW (4-in-1) LED emitters. Su
 | 7 | Function Choice | 0–50: direct CH1–6 control; 51–100: color select (via CH8); 101–150: color jump; 151–200: color gradate; 201–250: color pulse; 251–255: sound control |
 | 8 | Function Speed | Speed / color output when CH7 ≥ 51 |
 
-> **This project uses 4-channel mode (`d001`).** In 8-channel mode (`A001`) CH1 is a master dimmer — sending 0 on CH1 blacks out the fixture regardless of other channels.
+> **This fixture is a bench test light only — it is not part of the installed rig.** The four tower uplights are LaluceNatz LL960S units; see [strobe-lalucenatz-500w-rgbw.md](strobe-lalucenatz-500w-rgbw.md) and [../hardware.md](../hardware.md).
+>
+> When bench-testing with it, use 4-channel mode (`d001`) to match the firmware's uplight block. In 8-channel mode (`A001`) CH1 is a master dimmer — sending 0 on CH1 blacks out the fixture regardless of other channels.
 
 ---
 

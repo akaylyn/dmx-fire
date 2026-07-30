@@ -1,5 +1,15 @@
 # Spec: Per-Tower Independent Control via Web UI
 
+> **Historical design spec — code samples below are superseded.** This records the
+> original migration from single-tower globals to per-tower config. Since then the
+> palette fields became the theme system (`themeName`/`speed`, see
+> [spec-themes.md](spec-themes.md)), `wDim` was split into separate fire and white
+> channels ([spec-tower-fixtures-fire-white.md](spec-tower-fixtures-fire-white.md)),
+> and the uplights moved to 4-channel mode, dropping `masterDim`/`rgbStrobe`/`wStrobe`
+> from `TowerState` entirely ([spec-uplight-4ch-mode.md](spec-uplight-4ch-mode.md)).
+> The snippets are kept as-written for the record; for current behaviour see
+> `docs/hardware.md` and `CLAUDE.md`.
+
 ## Overview
 
 Each of the 4 towers gets its own palette and brightness, configurable via the web UI. A "set all" control at the top allows ganging all towers at once. A "connected" toggle per tower tracks which fixtures are physically present.

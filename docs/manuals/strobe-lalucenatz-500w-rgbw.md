@@ -193,6 +193,61 @@ White effect types include: white, 1/2/3/4-segment, racing, flowing, refresh, st
 
 ---
 
+## Troubleshooting: fixture ignores DMX / runs its own pattern
+
+Observed on site: all four uplights showing a yellow field with a white runner and
+refusing to respond to either the ESP32 or a manual DMX console.
+
+**There is no separate "DMX mode" menu item on this fixture.** Selecting a built-in
+effect (`M###`) or `Soud` *is* the mode change, and `ENTER` saves it with power-off
+memory. A fixture with an effect selected ignores DMX from any controller until the
+effect is cleared. The observed pattern is an RGB *racing/flowing* effect plus a
+*white* effect running together — note the RGB and white effect banks are separate
+menu items that both display as `M###`.
+
+**The fixture also runs a built-in demo program when it receives no valid DMX at
+all — and on site this turned out to be the actual cause.** A fixture showing a
+pattern is therefore not evidence of a menu misconfiguration; check signal first.
+
+Quick triage — **unplug the fixture's DMX cable and watch it**:
+
+| Result | Cause | Fix |
+|--------|-------|-----|
+| Pattern continues, and reconnecting restores DMX control | **No valid DMX was reaching it.** Suspect a dead link *upstream* — a failed pass-through, bad cable, or a failed fixture input stage clamping the pair | Find and replace the bad node/cable; see below |
+| Pattern continues even with good signal present | Standalone effect mode latched in the menu | Clear both `M###` effects, then set `CH04` |
+| Goes dark / static | Fixture is in `CH11`, so incoming Blue lands on its effect-select channel (CH3) | Set `CH04` |
+
+The `CH11` case also makes a plain 4-fader RGBW console look broken: its blue fader
+is CH3, the effect selector.
+
+**One bad fixture can take out the whole universe.** A failed RS-485 input stage
+clamps the differential pair and corrupts frames for *every* device on the bus,
+including upstream ones and including a manual console; a failed XLR pass-through
+silently kills everything downstream of it. Symptom shape: fixtures and decoders
+upstream of the fault behave normally, everything downstream reverts to demo
+patterns or goes dead. Bisect the chain by unplugging fixtures one at a time and
+watching what recovers.
+
+**Reset to plain 4-channel DMX control, per fixture:**
+
+1. `CH##` → **`CH04`** → ENTER *(default is `CH11`; independent of the address)*
+2. RGB effect `M###` (ranges to `M083`) → **`M000`** → ENTER
+3. White effect `M###` (ranges to `M040`) → **`M000`** → ENTER — easy to miss, displays the same as the RGB one
+4. Step past `Soud` **without** pressing ENTER
+5. `A###` → tower address (**009 / 024 / 039 / 054**) → ENTER
+6. Confirm manual `R`/`G`/`B`/`W` levels are `255`, and that the factory output limits (hold MENU 3 s) are near the default `200`, not `032`
+
+**Verify:** set the project's theme to `rainbow` — each tower gets a hue offset by
+index, so all four uplights should show four *different* colours. Same colour on
+multiple fixtures means they share a DMX address. Then `bright_white` at 255 should
+drive all four to full white, exercising the W channel.
+
+> Avoid the `Send` item in the factory-settings menu (hold MENU 3 s) — it broadcasts
+> settings to every daisy-chained fixture, which is one way all fixtures end up
+> configured identically.
+
+---
+
 ## Master / Slave operation
 
 - Connect fixtures via 3-pin XLR daisy-chain

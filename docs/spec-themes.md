@@ -35,7 +35,7 @@ Colour themes drive RGB (`s.r/g/b`) and leave `s.white = 0`. White themes drive 
 
 ### Strobe control
 
-Every render sets `s.masterDim = 255` and `s.rgbStrobe = 1`. The LaluceNatz LL960S in 11-channel mode treats strobe CH2 = 0 as "RGB section off"; 1–7 is steady/open. Without `rgbStrobe = 1` the uplight shows no colour regardless of its RGB channels.
+Renders set only `r`/`g`/`b`/`white`, with `brightness` already applied. The uplight runs in 4-channel mode (R/G/B/W linear dimming), so there is no master dimmer to set and no strobe gate to hold open — and `TowerState` no longer carries `masterDim`/`rgbStrobe`/`wStrobe`. Do not reintroduce them: in 4-channel mode those channel slots are Green and Blue, so writing the old 11-channel constants there tints every tower. See [spec-uplight-4ch-mode.md](spec-uplight-4ch-mode.md).
 
 ---
 

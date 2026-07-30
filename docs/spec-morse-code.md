@@ -6,7 +6,7 @@ The button modes ([Fireball, Party, Machine Gun](spec-machine-gun.md)) all produ
 
 This spec adds Morse code playback: type a text message into the web UI, hit "Fire in Morse," and the propane solenoid pulses out international Morse code for that text. Useful for performance moments where the fire becomes a message rather than just an effect.
 
-While a Morse playback is running, it takes priority over the FSM-driven fire output — Test Fire / physical button presses still update the FSM but do not reach CH4.
+While a Morse playback is running, it takes priority over the FSM-driven fire output — Test Fire / physical button presses still update the FSM but do not reach the Confluence solenoid on CH1.
 
 ---
 
@@ -90,8 +90,8 @@ Logs at INFO level: `[MORSE] starting: <units> units * <ms> ms = <total> ms tota
 
 ## Interaction with other features
 
-- **Button-driven fire:** Physical button presses and `POST /api/button/press` still advance the FSM through `FIRE_ACTIVE`, but CH4 stays muted by the Morse override. When playback ends, normal FSM behaviour resumes.
-- **Tower lights:** Unaffected. Morse only drives CH4 (Confluence solenoid). Towers continue their normal idle/fire-state behaviour based on the FSM.
+- **Button-driven fire:** Physical button presses and `POST /api/button/press` still advance the FSM through `FIRE_ACTIVE`, but CH1 stays muted by the Morse override. When playback ends, normal FSM behaviour resumes.
+- **Tower lights:** Unaffected. Morse only drives CH1 (Confluence solenoid). Towers continue their normal idle/fire-state behaviour based on the FSM — including their own valves on decoder CH4, which Morse never touches.
 - **Cooldown:** Morse playback ignores `cooldownMs` — it has its own timing.
 
 ---

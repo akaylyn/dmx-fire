@@ -4,7 +4,8 @@
  * @Dependent Library:
  * M5Unified@^0.2.11: https://github.com/m5stack/M5Unified
  * FastLED@^3.9.10: https://github.com/FastLED/FastLED
- * SparkFunDMX@^2.0.1: https://github.com/sparkfun/SparkFunDMX
+ * DMX512 frames are emitted directly on Serial1 by dmx.cpp (see dmx.h for why
+ * SparkFunDMX::update() is no longer used).
  */
 
 #include <M5Unified.h>
@@ -62,7 +63,9 @@ void loop() {
   bool pressed = (digitalRead(KEY_INPUT_PIN) == LOW);
   keyButton.setRawState(millis(), pressed);
 
-  dmxKeepalive();
+  // No keepalive here: the 50 Hz frame loop below is the single DMX writer. A
+  // second writer could call update() while a frame was still in the shift
+  // register, and the baud-rate change for the next break would mangle its tail.
 
   // OR physical events with API-injected events so the FSM is single-sourced.
   bool btnPressed  = keyButton.wasPressed()  || buttonConsumePress();
@@ -72,8 +75,9 @@ void loop() {
   if (btnReleased) LOG_I("[BTN] released");
   buttonFsmTick(btnPressed, btnReleased, btnHeld);
 
-  // DMX output — 50 Hz
-  EVERY_N_MILLISECONDS(20) {
+  // DMX output. Interval lives in dmx.h — a ~3.1 ms frame leaves the rest of the
+  // interval idle, so lowering it shortens the idle window on the bus.
+  EVERY_N_MILLISECONDS(DMX_FRAME_INTERVAL_MS) {
     // Purge overlay: held-open "empty the accumulator" action, independent of
     // the FSM. Bypasses fireDurationMs and cooldown entirely.
     bool purge = purgeActive();
@@ -137,7 +141,7 @@ void loop() {
             dmxLastFrame[0], dmxLastFrame[1], dmxLastFrame[2], dmxLastFrame[3], dmxLastFrame[4]);
     }
 
-    dmxDevice.update();
+    dmxUpdate();
   }
 
   // Onboard LED reflects FSM state

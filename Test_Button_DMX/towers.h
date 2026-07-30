@@ -5,12 +5,13 @@
 static const uint8_t NUM_TOWERS = 4;
 
 // State sent to every fixture in a tower each DMX frame.
+//
+// The uplight runs in 4-channel mode (R/G/B/W linear dimming), so there is no
+// master dimmer and no strobe channel to drive: brightness is baked into
+// r/g/b/white by themeRender().
 struct TowerState {
   uint8_t r, g, b;      // theme colour — uplight RGB (full) + accumulator strips (capped)
-  uint8_t masterDim;    // strobe CH1: overall brightness (0–255)
-  uint8_t rgbStrobe;    // strobe CH2: RGB strobe speed (0=off, 1–255=slow→fast)
-  uint8_t wStrobe;      // strobe CH8: white strobe speed (0=off, 1–255=slow→fast)
-  uint8_t white;        // uplight white channel (strobe CH11) — independent of fire
+  uint8_t white;        // uplight white channel (4-ch mode CH4) — independent of fire
   uint8_t fire;         // accumulator decoder CH4 — propane valve, FIRE_ACTIVE only
 };
 
@@ -20,7 +21,7 @@ struct TowerConfig {
   String    themeName;   // "green","blue","fire","simon","rainbow","warm_white","bright_white","candle"
   uint8_t   bright;      // idle brightness 0–255
   uint16_t  speed;       // theme speed % (10..400, 100 = normal)
-  uint8_t   flameLevel;  // 0=off, 255=full open; written to decoder CH4 (W) during fire
+  uint8_t   flameLevel;  // 0=off, 255=full open; written to decoder CH4 during fire
 };
 
 extern TowerConfig towerConfigs[NUM_TOWERS];

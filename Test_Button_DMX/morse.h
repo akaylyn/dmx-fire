@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 // Morse-code fire playback. While active, takes priority over the FSM and
-// drives the Confluence solenoid (CH4) directly.
+// drives the Confluence solenoid (CH1) directly.
 //
 // International Morse timing in "units":
 //   dot = 1 unit ON     dash = 3 units ON

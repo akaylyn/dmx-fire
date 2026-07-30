@@ -75,12 +75,10 @@ static uint32_t scaleTime(uint32_t nowMs, uint16_t speedPct) {
 
 TowerState themeRender(const String& name, uint8_t index, uint32_t nowMs,
                        uint8_t brightness, uint16_t speedPct) {
+  // The uplight runs in 4-channel mode (R/G/B/W linear dimming), so brightness
+  // is baked straight into r/g/b/white below — there is no master dimmer to set
+  // and no strobe gate to hold open.
   TowerState s = {};
-  s.masterDim = 255;
-  // LaluceNatz LL960S strobe CH2: 0 disables the RGB section entirely; 1–7
-  // is "open" (steady, no visible strobing). Without this the strobe head
-  // never shows theme colours regardless of CH9–11 values.
-  s.rgbStrobe = 1;
 
   uint32_t t = scaleTime(nowMs, speedPct);
 

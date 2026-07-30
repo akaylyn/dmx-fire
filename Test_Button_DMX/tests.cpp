@@ -65,17 +65,14 @@ static void testConfluenceConfig() {
 
 static void testDmxAddresses() {
   HEAD("DMX universe map");
-  INFO("Confluence : ch  1 –  4  (only ch 4 = solenoid)");
+  INFO("Confluence : ch  1 –  4  (only ch 1 = solenoid)");
   for (uint8_t i = 0; i < NUM_TOWERS; i++) {
-    uint16_t base    = 4 + (uint16_t)i * 15;
-    uint16_t decEnd  = base + 4;
-    uint16_t strobeS = base + 5;
-    uint16_t strobeE = base + 15;
-    INFO("Tower %d    : ch %2d – %2d decoder (R/G/B/W),  ch %2d – %2d strobe",
-         i, base + 1, decEnd, strobeS, strobeE);
+    uint16_t base = 4 + (uint16_t)i * 15;
+    INFO("Tower %d    : ch %2d – %2d decoder (R/G/B/FIRE),  ch %2d – %2d uplight (R/G/B/W),  ch %2d – %2d unclaimed",
+         i, base + 1, base + 4, base + 5, base + 8, base + 9, base + 15);
   }
-  PASS("Address map printed — verify fixtures are DIP-switched to these channels");
-  INFO("NOTE: towers moved +4 from previous sketch to make room for Confluence on ch 1-4");
+  PASS("Address map printed — verify fixtures are set to these channels");
+  INFO("NOTE: uplights must be in 4-channel mode (R/G/B/W); start addresses unchanged");
 }
 
 // ---- Storage round-trip -------------------------------------------------
@@ -132,7 +129,6 @@ static void testDmxVisual() {
   INFO("Watch fixtures — if none respond, they are likely DIP-switched to old addresses");
 
   TowerState state = {};
-  state.masterDim = 255;
   state.r = state.g = state.b = 255;
   state.white = 255;   // uplight white channel
   state.fire  = 0;     // NEVER open the propane valves during a boot diagnostic
@@ -143,7 +139,7 @@ static void testDmxVisual() {
       towerWrite(i, state);
     }
     confluenceWrite(0);  // don't open central solenoid during test
-    dmxDevice.update();
+    dmxUpdate();
     delay(20);
   }
 
@@ -151,7 +147,7 @@ static void testDmxVisual() {
   TowerState off = {};
   for (uint8_t i = 0; i < NUM_TOWERS; i++) towerWrite(i, off);
   confluenceWrite(0);
-  dmxDevice.update();
+  dmxUpdate();
 
   PASS("Visual test complete — did the fixtures light up?");
 }

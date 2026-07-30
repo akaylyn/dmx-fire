@@ -620,7 +620,7 @@
       <h2>Confluence</h2>
       <fieldset>
         <legend>Propane Solenoid</legend>
-        <p class='dmx-addr'>Central solenoid driver: <code>A001</code> (CH&nbsp;4 = central valve). Each tower's accumulator valve also opens via its own decoder CH&nbsp;4 during fire.</p>
+        <p class='dmx-addr'>Central solenoid driver: <code>A001</code>, 3-channel mode (CH&nbsp;1 = central valve). Each tower's accumulator valve also opens via its own decoder CH&nbsp;4 during fire.</p>
         <form method='POST' action='/set'>
           <input type='hidden' name='target' value='confluence'>
           <div class='cr'>
@@ -651,7 +651,7 @@
       <div class='tower-panel' data-sub='all'>
         <fieldset>
           <legend>Apply to All Towers</legend>
-          <p class='dmx-addr'>Accumulator decoders (RGB strips, fire on CH4): <code>A005</code> / <code>A020</code> / <code>A035</code> / <code>A050</code><br>Uplights (LaluceNatz 11ch, colour + white): <code>A009</code> / <code>A024</code> / <code>A039</code> / <code>A054</code></p>
+          <p class='dmx-addr'>Accumulator decoders (RGB strips, fire on CH4): <code>A005</code> / <code>A020</code> / <code>A035</code> / <code>A050</code><br>Uplights (LaluceNatz 4ch R/G/B/W): <code>A009</code> / <code>A024</code> / <code>A039</code> / <code>A054</code></p>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='all'>
             <label>Theme<select name='theme'>
@@ -685,7 +685,7 @@
       <div class='tower-panel' data-sub='t0' hidden>
         <fieldset>
           <legend>Tower 0</legend>
-          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A005</code><br>Uplight (LaluceNatz 11ch, colour + white): <code>A009</code></p>
+          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A005</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A009</code></p>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='0'>
             <div class='cr'>
@@ -722,7 +722,7 @@
       <div class='tower-panel' data-sub='t1' hidden>
         <fieldset>
           <legend>Tower 1</legend>
-          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A020</code><br>Uplight (LaluceNatz 11ch, colour + white): <code>A024</code></p>
+          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A020</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A024</code></p>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='1'>
             <div class='cr'>
@@ -759,7 +759,7 @@
       <div class='tower-panel' data-sub='t2' hidden>
         <fieldset>
           <legend>Tower 2</legend>
-          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A035</code><br>Uplight (LaluceNatz 11ch, colour + white): <code>A039</code></p>
+          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A035</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A039</code></p>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='2'>
             <div class='cr'>
@@ -796,7 +796,7 @@
       <div class='tower-panel' data-sub='t3' hidden>
         <fieldset>
           <legend>Tower 3</legend>
-          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A050</code><br>Uplight (LaluceNatz 11ch, colour + white): <code>A054</code></p>
+          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A050</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A054</code></p>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='3'>
             <div class='cr'>

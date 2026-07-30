@@ -337,7 +337,8 @@ static String buildPage() {
   s += F("<section class='tab' data-tab='confluence' role='tabpanel' hidden>"
          "<h2>Confluence</h2>"
          "<fieldset><legend>Propane Solenoid</legend>"
-         "<p class='dmx-addr'>Central solenoid driver: <code>A001</code> (CH&nbsp;4 = central valve). "
+         "<p class='dmx-addr'>Central solenoid driver: <code>A001</code>, 3-channel mode "
+         "(CH&nbsp;1 = central valve). "
          "Each tower's accumulator valve also opens via its own decoder CH&nbsp;4 during fire.</p>"
          "<form method='POST' action='/set'>"
          "<input type='hidden' name='target' value='confluence'>");
@@ -359,7 +360,7 @@ static String buildPage() {
          "<fieldset><legend>Apply to All Towers</legend>"
          "<p class='dmx-addr'>Accumulator decoders (RGB strips, fire on CH4): "
          "<code>A005</code> / <code>A020</code> / <code>A035</code> / <code>A050</code><br>"
-         "Uplights (LaluceNatz 11ch, colour + white): "
+         "Uplights (LaluceNatz 4ch R/G/B/W): "
          "<code>A009</code> / <code>A024</code> / <code>A039</code> / <code>A054</code></p>"
          "<form method='POST' action='/set'>"
          "<input type='hidden' name='target' value='all'>");
@@ -370,13 +371,14 @@ static String buildPage() {
   s += F("<button type='submit'>Apply to All</button></form></fieldset></div>");
 
   for (uint8_t i = 0; i < NUM_TOWERS; i++) {
-    // Tower N occupies a contiguous 15-channel block starting at CH (5 + N*15).
-    // First 4 channels = RGBW decoder (strips + fire CH4); next 11 = strobe.
+    // Tower N's 15-channel stride starts at CH (5 + N*15). The first 4 channels
+    // are the accumulator decoder (strips + fire CH4) and the next 4 are the
+    // uplight in 4-channel mode; the remaining 7 are unclaimed.
     char decoderAddr[5];
-    char strobeAddr[5];
+    char uplightAddr[5];
     uint16_t blockStart = 5 + (uint16_t)i * 15;
     snprintf(decoderAddr, sizeof(decoderAddr), "A%03u", (unsigned)blockStart);
-    snprintf(strobeAddr,  sizeof(strobeAddr),  "A%03u", (unsigned)(blockStart + 4));
+    snprintf(uplightAddr, sizeof(uplightAddr), "A%03u", (unsigned)(blockStart + 4));
 
     s += F("<div class='tower-panel' data-sub='t");
     s += i;
@@ -387,8 +389,8 @@ static String buildPage() {
     s += F("</legend>"
            "<p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>");
     s += decoderAddr;
-    s += F("</code><br>Uplight (LaluceNatz 11ch, colour + white): <code>");
-    s += strobeAddr;
+    s += F("</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>");
+    s += uplightAddr;
     s += F("</code></p>"
            "<form method='POST' action='/set'>"
            "<input type='hidden' name='target' value='");

@@ -15,7 +15,11 @@ void towerSetup() {
   }
 }
 
-// Each tower occupies 15 DMX channels: 4 (decoder) + 11 (strobe/uplight).
+// Stride between tower blocks. Only the first 8 channels of each stride are
+// claimed by a fixture — 4 (decoder) + 4 (uplight in 4-channel mode) — but the
+// stride stays at 15 so every fixture keeps the start address it already has.
+// Switching the uplights from 11-channel to 4-channel mode therefore needs no
+// re-addressing in the field. See docs/spec-uplight-4ch-mode.md.
 static const uint8_t CHANNELS_PER_TOWER = 15;
 
 // Accumulator LED strips are RGB-only, old, and power-limited — sending full
@@ -26,17 +30,17 @@ static const uint8_t CHANNELS_PER_TOWER = 15;
 static const uint16_t STRIP_BRIGHTNESS_PCT = 75;
 
 // Write state to one tower. Each tower has TWO fixtures sharing one config:
-//   Decoder  (4ch): CH1-3 = accumulator strip RGB (capped); CH4 = FIRE valve only.
-//   Uplight (11ch LaluceNatz strobe): full theme RGB + white channel (CH11).
-// Fire (decoder CH4) and white (uplight CH11) are independent: firing never
+//   Decoder (4ch): CH1-3 = accumulator strip RGB (capped); CH4 = FIRE valve only.
+//   Uplight (4ch): LaluceNatz LL960S in 4-channel mode — R, G, B, W direct.
+// Fire (decoder CH4) and white (uplight CH4) are independent: firing never
 // lights the white channel, and white never opens the valve.
 //
 // Layout (matches the DMX address labels shown in the web UI):
-//   Confluence (central solenoid): CH 1..4              (CH 4 = central valve)
-//   Tower 0: decoder A005..A008 (fire=A008), uplight A009..A019
-//   Tower 1: decoder A020..A023 (fire=A023), uplight A024..A034
-//   Tower 2: decoder A035..A038 (fire=A038), uplight A039..A049
-//   Tower 3: decoder A050..A053 (fire=A053), uplight A054..A064
+//   Confluence (central solenoid): CH 1..4              (CH 1 = central valve)
+//   Tower 0: decoder A005..A008 (fire=A008), uplight A009..A012, CH 13..19 unclaimed
+//   Tower 1: decoder A020..A023 (fire=A023), uplight A024..A027, CH 28..34 unclaimed
+//   Tower 2: decoder A035..A038 (fire=A038), uplight A039..A042, CH 43..49 unclaimed
+//   Tower 3: decoder A050..A053 (fire=A053), uplight A054..A057, CH 58..64 unclaimed
 //
 // NOTE: DMX addresses are 1-indexed. Writing to address 0 crashes the bus.
 void towerWrite(uint8_t index, const TowerState& state) {
@@ -48,24 +52,27 @@ void towerWrite(uint8_t index, const TowerState& state) {
   dmxShadowWrite((uint8_t)(state.b * STRIP_BRIGHTNESS_PCT / 100), base + 3);  // CH3: Blue
   dmxShadowWrite(state.fire,                                      base + 4);  // CH4: FIRE valve
 
-  // --- 11-channel uplight (LaluceNatz LL960S in 11ch mode): full RGB + white ---
-  const uint16_t s = base + 4;  // uplight block starts after decoder
-  dmxShadowWrite(state.masterDim, s + 1);  // CH1: master dimmer
-  dmxShadowWrite(state.rgbStrobe, s + 2);  // CH2: RGB strobe speed
-  dmxShadowWrite(0,               s + 3);  // CH3: RGB mode (0 = direct colour)
-  dmxShadowWrite(0,               s + 4);  // CH4: RGB mode speed (unused)
-  dmxShadowWrite(state.r,         s + 5);  // CH5: Red (full)
-  dmxShadowWrite(state.g,         s + 6);  // CH6: Green (full)
-  dmxShadowWrite(state.b,         s + 7);  // CH7: Blue (full)
-  dmxShadowWrite(state.wStrobe,   s + 8);  // CH8: white strobe speed
-  dmxShadowWrite(0,               s + 9);  // CH9: white mode (0 = direct)
-  dmxShadowWrite(0,               s + 10); // CH10: white mode speed (unused)
-  dmxShadowWrite(state.white,     s + 11); // CH11: white dimmer (independent of fire)
+  // --- Uplight (LaluceNatz LL960S, 4-channel mode): full RGB + white ---
+  // 4-channel mode is plain linear dimming per colour: no master dimmer and no
+  // strobe gate to open, so brightness must already be baked into the state
+  // values (themeRender() does this) and there is nothing else to send.
+  const uint16_t s = base + 4;  // uplight block starts after the decoder
+  dmxShadowWrite(state.r,     s + 1);  // CH1: Red (full, uncapped)
+  dmxShadowWrite(state.g,     s + 2);  // CH2: Green
+  dmxShadowWrite(state.b,     s + 3);  // CH3: Blue
+  dmxShadowWrite(state.white, s + 4);  // CH4: White (independent of fire)
+
+  // --- Unclaimed tail of the stride ---
+  // No fixture listens here in 4-channel mode. Drive it to 0 anyway so these
+  // channels can never hold a stale nonzero byte next to a valve channel.
+  for (uint16_t c = s + 5; c <= base + CHANNELS_PER_TOWER; c++) {
+    dmxShadowWrite(0, c);
+  }
 }
 
 void towersWrite(const TowerState& state) {
   for (uint8_t i = 0; i < NUM_TOWERS; i++) {
     towerWrite(i, state);
   }
-  dmxDevice.update();
+  dmxUpdate();
 }

@@ -55,26 +55,46 @@ used for transmit.
 
 | Step | Action |
 |------|--------|
+| 0 | `if (!dmxReadyToSend()) return` — skip if the previous frame is still enqueued |
 | 1 | `updateBaudRate(50000)` |
 | 2 | `write(0)` → 180 µs break + 40 µs MAB |
 | 3 | `flush()` — break must complete before the divider changes back |
 | 4 | `updateBaudRate(250000)` |
 | 5 | `write(0x00)` — DMX null start code |
-| 6 | `write(dmxLastFrame, 64)` — channels 1–64 |
+| 6 | `write(dmxLastFrame, DMX_FRAME_SLOTS)` — channels 1–64 |
 | 7 | `flush()` — frame fully out before returning |
 
 `BREAK_BAUD = 50000` yields a **180 µs break and 40 µs MAB**, roughly double the
 spec floor on both. Do not raise it back toward 90000 without re-testing every
 decoder on the bus.
 
-The trailing `flush()` blocks for ~2.9 ms (65 bytes × 44 µs). At the 50 Hz frame
-interval that is ~15% duty and it makes a mid-frame baud change structurally
-impossible.
+**TX-readiness query (step 0).** Before starting a break, `dmxUpdate()` calls
+`dmxReadyToSend()`, which compares `Serial1.availableForWrite()` against the idle
+free-space baseline captured in `dmxSetup()`. If a prior frame has not finished
+draining, the tick is skipped rather than dropping a break onto bytes still in
+flight. This is a non-blocking guard (the "query the UART before sending again"
+requirement); the trailing `flush()` normally makes the next call ready, so on the
+single-writer path it never actually skips.
 
-**Single writer.** `dmxKeepalive()` is deleted. The 50 Hz loop in
+The trailing `flush()` blocks for ~2.9 ms (65 bytes × 44 µs). At the 20 Hz frame
+interval (`DMX_FRAME_INTERVAL_MS = 50`) that is ~6% duty and it makes a mid-frame
+baud change structurally impossible.
+
+**Rate is deliberately slow (20 Hz).** `DMX_FRAME_INTERVAL_MS = 50`. Field
+experience is that an unhurried transmitter is more reliable on this bus than
+pushing toward continuous refresh — fewer frames to collide with loop jitter, more
+settle margin for the cheap decoders. The trade-off is a longer high-Z idle window
+between frames; revisit only if idle-line noise reappears.
+
+**Frame length restored to 64 slots.** `DMX_FRAME_SLOTS = 64`. A 128-slot padding
+experiment (toward the console's 512) regressed the accumulator light and was
+reverted; the constant stays so the experiment is one line to redo, but re-scope
+before trusting any value other than 64. See notes.md "START HERE".
+
+**Single writer.** `dmxKeepalive()` is deleted. The 20 Hz loop in
 `Test_Button_DMX.ino` is the only caller of `dmxUpdate()` during normal operation
 (`tests.cpp` also calls it during the boot diagnostic, before that loop starts). At
-50 frames/sec no fixture times out, so the keepalive had no purpose.
+20 frames/sec no fixture times out, so the keepalive had no purpose.
 
 **Buffer.** `dmxLastFrame[64]` is now the transmitted frame itself rather than a
 mirror of a second buffer inside the library — `dmxShadowWrite()` writes only there.
@@ -95,10 +115,11 @@ None. Frame timing constants are compile-time (`dmx.cpp`).
 
 ## Non-goals
 
-- **Does not change the refresh rate.** Still 50 Hz via
-  `DMX_FRAME_INTERVAL_MS`, leaving ~17 ms of idle per interval. Shortening that
-  window is a separate mitigation if flicker persists (cause #4 in
-  [../notes.md](../notes.md)).
+- **Refresh rate is set slow on purpose, not tuned for latency.** 20 Hz via
+  `DMX_FRAME_INTERVAL_MS = 50`, leaving ~47 ms of idle per interval. Slowing the bus
+  is the chosen direction (see Technical details); shortening the idle window toward
+  continuous is the opposite mitigation and is deliberately *not* pursued here
+  (cause #4 in [../notes.md](../notes.md)).
 - **Does not address idle-line biasing.** The transceiver's DE is not driven by
   firmware (no wire for it on the Unit DMX's 4-pin Grove); whether the line is held
   in a defined mark state between frames is a hardware property. See cause #2 in

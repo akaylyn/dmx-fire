@@ -19,22 +19,28 @@
 // exactly this many channels (tests/test_state.py asserts the count).
 static const uint16_t DMX_SHADOW_SIZE = 64;
 
-// Slots transmitted per frame. Deliberately longer than the addressed universe: a
-// 64-slot frame is very short — a console sends 512 — and cheap decoders can
-// misbehave on short packets, which is one of the remaining differences between
-// this controller and the manual console that reads the bus cleanly. Slots beyond
-// DMX_SHADOW_SIZE are always zero, so the padding can never drive a fixture.
-static const uint16_t DMX_FRAME_SLOTS = 128;
+// Slots transmitted per frame. Back at 64 (== the addressed universe) after the
+// 128-slot padding experiment regressed the accumulator light — see notes.md
+// "START HERE". The padding idea (a console sends 512) is kept as a one-line
+// experiment: raise this and dmxLastFrame grows with it; slots beyond
+// DMX_SHADOW_SIZE stay zero so padding can never drive a fixture. Re-scope the
+// bus before trusting any value other than 64.
+static const uint16_t DMX_FRAME_SLOTS = 64;
 
 // The frame buffer IS what gets transmitted — there is no second copy to keep in
 // sync. Index 0 = DMX channel 1. The first DMX_SHADOW_SIZE entries are live
 // channel data; the rest is zero padding.
 extern uint8_t dmxLastFrame[DMX_FRAME_SLOTS];
 
-// Frame interval in ms. A 128-slot frame (break + start code + 128 slots) occupies
-// ~5.9 ms on the wire, so the line idles for the remainder of each interval —
-// lowering this shortens that idle window, raising it lengthens it.
-static const uint8_t DMX_FRAME_INTERVAL_MS = 50;  // 20 Hz — ~44 ms idle per frame
+// Frame interval in ms. A 64-slot frame (break + start code + 64 slots) occupies
+// ~2.9 ms on the wire, so the line idles for the remainder of each interval.
+// Deliberately kept SLOW (20 Hz): field experience is that a slower, unhurried
+// transmitter is more reliable on this bus than pushing toward continuous refresh
+// — fewer frames to collide with loop jitter, more settle margin for the cheap
+// decoders. The trade-off is a longer high-Z idle window between frames (notes.md
+// causes #2/#4); revisit only if idle-line noise reappears. DMX fixtures tolerate
+// 20 Hz well (spec floor is ~1 Hz).
+static const uint8_t DMX_FRAME_INTERVAL_MS = 50;  // 20 Hz — ~47 ms idle per frame
 
 void dmxSetup();
 
@@ -42,7 +48,16 @@ void dmxSetup();
 // 1..DMX_SHADOW_SIZE are ignored so the padding stays zero.
 void dmxShadowWrite(uint8_t value, uint16_t ch);
 
+// True when the previous frame has fully drained from the UART TX buffer, so a
+// new break can start without a baud-rate change landing on bytes still enqueued.
+// Non-blocking — queries Serial1.availableForWrite() against the idle buffer size
+// captured in dmxSetup(). dmxUpdate() consults this before emitting; exposed so
+// a caller (or a test) can pace frames without spinning on flush().
+bool dmxReadyToSend();
+
 // Emit one complete frame: BREAK, MAB, null start code, then DMX_FRAME_SLOTS
-// slots. Blocks until the frame has fully left the UART so that the next call's
-// baud-rate change can never corrupt bytes still in flight.
+// slots. Skips the frame (returns without touching the wire) if the previous one
+// has not finished draining — see dmxReadyToSend(). Otherwise blocks until the
+// frame has fully left the UART so that the next call's baud-rate change can
+// never corrupt bytes still in flight.
 void dmxUpdate();

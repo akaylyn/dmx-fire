@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DMX Field Tester</title>
+<style>
+  :root {
+    --bg:#12141a; --panel:#1c1f28; --panel2:#232733; --line:#2e3342;
+    --ink:#e7eaf0; --muted:#9aa3b2; --accent:#4f8cff; --ok:#3ec77a;
+    --warn:#ffb020; --bad:#ff5470; --fire:#ff6a3d;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:16px; max-width:900px; margin:0 auto;
+  }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .sub { color:var(--muted); margin:0 0 16px; font-size:13px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:14px; }
+  button {
+    background:var(--panel2); color:var(--ink); border:1px solid var(--line);
+    border-radius:9px; padding:9px 14px; font-size:14px; cursor:pointer; font-weight:600;
+  }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.ghost { background:transparent; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .grow { flex:1; }
+  .pill { font-size:12px; padding:3px 9px; border-radius:20px; border:1px solid var(--line); color:var(--muted); }
+  .pill.on { color:var(--ok); border-color:var(--ok); }
+  .pill.off { color:var(--bad); border-color:var(--bad); }
+  .towers { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+  .tower { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .tower h3 { margin:0 0 4px; font-size:15px; }
+  .tower .chmap { color:var(--muted); font-size:12px; margin:0 0 10px; }
+  .tower .row { margin-bottom:8px; }
+  .swatch { width:16px; height:16px; border-radius:4px; display:inline-block; vertical-align:middle; margin-right:6px; border:1px solid rgba(255,255,255,.15); }
+  .status { font-size:13px; color:var(--muted); min-height:18px; }
+  .verdict { border-radius:10px; padding:12px 14px; margin-top:10px; font-weight:600; display:none; }
+  .verdict.show { display:block; }
+  .verdict.ok  { background:rgba(62,199,122,.12); border:1px solid var(--ok);  color:var(--ok); }
+  .verdict.bad { background:rgba(255,84,112,.12); border:1px solid var(--bad); color:var(--bad); }
+  .verdict.line{ background:rgba(255,176,32,.12); border:1px solid var(--warn); color:var(--warn); }
+  .banner { background:rgba(255,106,61,.12); border:1px solid var(--fire); color:var(--fire); border-radius:10px; padding:10px 12px; font-size:13px; margin-bottom:12px; }
+  label.chk { display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:14px; }
+  .grid64 { display:grid; grid-template-columns:repeat(8,1fr); gap:3px; font-size:11px; font-variant-numeric:tabular-nums; }
+  .cell { background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:3px 2px; text-align:center; }
+  .cell .n { color:var(--muted); font-size:9px; display:block; }
+  .cell.valve { border-color:var(--fire); }
+  .cell.hot { background:rgba(255,84,112,.25); border-color:var(--bad); color:#fff; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:12px; }
+  .warnbox { color:var(--warn); font-size:13px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>DMX Field Tester</h1>
+<p class="sub">Drives the towers from a USB-DMX interface as a clean reference console, so you can tell a
+<b>bad line</b> from a <b>bad component</b>. Independent of the ESP32 controller. Chrome/Edge only (Web Serial).</p>
+
+<div class="panel">
+  <div class="row">
+    <button id="connectBtn" class="primary">Connect interface</button>
+    <span id="connState" class="pill off">disconnected</span>
+    <span class="grow"></span>
+    <button id="blackoutBtn" disabled>Blackout (all 0)</button>
+  </div>
+  <p class="status" id="connStatus">Interface: Enttec DMX USB Pro protocol. Plug in, click Connect, pick the port.</p>
+</div>
+
+<div class="panel" id="testPanel" hidden>
+  <h2>Per-tower test</h2>
+  <div class="banner" id="gasBanner">
+    ⚠ Valve steps click the real propane solenoids. <b>Gas must be disconnected / lines vented.</b>
+    <label class="chk" style="margin-top:6px;display:flex;">
+      <input type="checkbox" id="armValves"> I confirm gas is off — arm valve steps
+    </label>
+  </div>
+  <div class="towers" id="towers"></div>
+</div>
+
+<div class="panel" id="quickPanel" hidden>
+  <h2>Quick actions</h2>
+  <div class="row">
+    <button data-quick="whiteAll">All uplights white</button>
+    <button data-quick="rgbAll">All fixtures cycle R/G/B</button>
+    <button data-quick="valveSweep" class="valve-btn">Sweep valve channels</button>
+    <button data-quick="confluence" class="valve-btn">Confluence solenoid (CH1)</button>
+  </div>
+  <p class="status" id="quickStatus"></p>
+</div>
+
+<div class="panel" id="verdictPanel" hidden>
+  <h2>Verdict helper</h2>
+  <p class="sub" style="margin:0 0 10px">After a test, answer what you observed. The tool maps it to a call.</p>
+  <div class="row">
+    <button data-v="noresp">Fixture didn't respond to this app</button>
+    <button data-v="noline">Cable tester / RX shows no signal past a point</button>
+    <button data-v="espflicker">Responds here, flickers off the ESP32</button>
+    <button data-v="idlenoise">Idle valve channel shows noise</button>
+  </div>
+  <div class="verdict" id="verdict"></div>
+</div>
+
+<div class="panel" id="rxPanel" hidden>
+  <h2>RX monitor — "is signal arriving here?"</h2>
+  <p class="sub" style="margin:0 0 10px">
+    Tap a branch or the chain <b>end</b> into the interface's DMX <b>input</b>. Switches the widget to receive
+    (pauses TX). Channels 1–64; valve channels outlined, nonzero-when-idle highlighted red.
+  </p>
+  <div class="row" style="margin-bottom:10px">
+    <button id="rxToggle">Start RX monitor</button>
+    <span id="rxState" class="pill off">off</span>
+    <span class="grow"></span>
+    <button id="rxClear" class="ghost">Clear capture</button>
+    <button id="rxCopy" class="ghost">Copy log</button>
+  </div>
+  <p class="status" id="rxStatus" style="margin:0 0 10px"></p>
+  <div class="row" id="valveStats" style="margin-bottom:10px"></div>
+  <div class="grid64" id="rxGrid"></div>
+
+  <h2 style="margin:18px 0 6px">Change capture — valve glitches</h2>
+  <p class="sub" style="margin:0 0 8px">
+    Every change on a valve channel (<b>1 / 8 / 23 / 38 / 53</b>) is logged with a timestamp. A channel that should
+    be steady — <b>255</b> while holding Empty, <b>0</b> idle — should log <b>nothing</b>. A burst of changes here,
+    with no button action, is the wire flapping the valve command: the cause of the spurious clicks. Legit button
+    presses show up too (0→255→0), so watch for changes you <i>didn't</i> command.
+  </p>
+  <div id="rxLog" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#0d0f14;border:1px solid var(--line);border-radius:8px;padding:10px;height:200px;overflow-y:auto;white-space:pre-wrap;color:var(--muted)"></div>
+</div>
+
+<p class="sub" style="margin-top:8px">
+  Channel map mirrors <code>docs/hardware.md</code>. Strips driven to ~75% (old power-limited strips);
+  uplights full. See <code>docs/spec-field-diagnostics.md</code> for the kit and verdict method.
+</p>
+
+<script>
+// ===========================================================================
+// Channel map — mirrors docs/hardware.md. base = 4 + tower*15.
+// ===========================================================================
+const TOWERS = [
+  { n:0, dR:5,  dG:6,  dB:7,  fire:8,  uR:9,  uG:10, uB:11, uW:12 },
+  { n:1, dR:20, dG:21, dB:22, fire:23, uR:24, uG:25, uB:26, uW:27 },
+  { n:2, dR:35, dG:36, dB:37, fire:38, uR:39, uG:40, uB:41, uW:42 },
+  { n:3, dR:50, dG:51, dB:52, fire:53, uR:54, uG:55, uB:56, uW:57 },
+];
+const CONFLUENCE_VALVE = 1;
+const VALVE_CHANNELS = [1, 8, 23, 38, 53];
+const ADDRESSED = 64;            // /api/state exposes 1..64
+const STRIP_LEVEL = 190;         // ~75% — respects STRIP_BRIGHTNESS_PCT on old strips
+const FULL = 255;
+
+// ===========================================================================
+// Interface driver — Enttec DMX USB Pro packet protocol.
+//   PROTOCOL SEAM: to support a different interface (e.g. an FTDI "Open DMX"
+//   type that needs a bit-banged break), implement the same 4 methods on a new
+//   driver class and swap `iface` below. Nothing else in the app changes.
+// ===========================================================================
+class EnttecProDriver {
+  constructor() { this.port=null; this.writer=null; this.reader=null; this._rxAbort=false; }
+
+  async open() {
+    this.port = await navigator.serial.requestPort();
+    // The Pro regenerates DMX internally, so the FTDI baud is nominal.
+    await this.port.open({ baudRate: 115200 });
+    this.writer = this.port.writable.getWriter();
+  }
+
+  async close() {
+    await this.stopReceive();
+    try { if (this.writer) { this.writer.releaseLock(); this.writer=null; } } catch {}
+    try { if (this.port) await this.port.close(); } catch {}
+    this.port = null;
+  }
+
+  // dmx: Uint8Array(512), channel N is dmx[N-1]. Label 6 = Output Only Send DMX.
+  async sendFrame(dmx) {
+    if (!this.writer) return;
+    const dataLen = dmx.length + 1;            // + DMX start code
+    const msg = new Uint8Array(5 + dataLen);   // 4 header + data + 1 end
+    msg[0] = 0x7E;                             // start of message
+    msg[1] = 6;                                // label: Output Only Send DMX
+    msg[2] = dataLen & 0xFF;                   // length LSB
+    msg[3] = (dataLen >> 8) & 0xFF;            // length MSB
+    msg[4] = 0x00;                            // DMX null start code
+    msg.set(dmx, 5);
+    msg[5 + dmx.length] = 0xE7;               // end of message
+    await this.writer.write(msg);
+  }
+
+  // Enable receive (label 8, mode 0 = send on every received frame) and stream
+  // parsed channel arrays to cb(Uint8Array up to 512).
+  async startReceive(cb) {
+    if (!this.writer) return;
+    const enable = new Uint8Array([0x7E, 8, 1, 0, 0x00, 0xE7]); // label 8, 1 data byte = 0
+    await this.writer.write(enable);
+    this._rxAbort = false;
+    this.reader = this.port.readable.getReader();
+    let buf = [];
+    (async () => {
+      try {
+        while (!this._rxAbort) {
+          const { value, done } = await this.reader.read();
+          if (done) break;
+          for (const b of value) buf.push(b);
+          buf = this._drain(buf, cb);
+          if (buf.length > 2048) buf = []; // resync guard
+        }
+      } catch {}
+    })();
+  }
+
+  // Parse 0x7E <label> <lenL> <lenH> <data...> 0xE7 frames; emit label-5 payloads.
+  _drain(buf, cb) {
+    while (true) {
+      const s = buf.indexOf(0x7E);
+      if (s < 0) return [];
+      if (buf.length < s + 4) return buf.slice(s);
+      const label = buf[s+1];
+      const len = buf[s+2] | (buf[s+3] << 8);
+      const end = s + 4 + len;
+      if (buf.length <= end) return buf.slice(s);
+      if (buf[end] !== 0xE7) { buf = buf.slice(s + 1); continue; } // bad frame, resync
+      if (label === 5) {
+        // data: [0]=receive status, [1]=DMX start code, [2..]=channels
+        const data = buf.slice(s + 4, end);
+        cb(new Uint8Array(data.slice(2)));
+      }
+      buf = buf.slice(end + 1);
+    }
+  }
+
+  async stopReceive() {
+    this._rxAbort = true;
+    try { if (this.reader) { await this.reader.cancel(); this.reader.releaseLock(); this.reader=null; } } catch {}
+  }
+}
+
+// ===========================================================================
+// App state
+// ===========================================================================
+const iface = new EnttecProDriver();
+const dmx = new Uint8Array(512);      // channel N -> dmx[N-1]
+let connected = false;
+let keepalive = null;
+let rxOn = false;
+let busy = false;
+
+// RX change-capture state
+const rxLast = new Int16Array(ADDRESSED + 1).fill(-1);   // last received per channel, -1 = unseen
+const valveChanges = {};                                 // change count per valve channel
+VALVE_CHANNELS.forEach(c => valveChanges[c] = 0);
+let rxLogLines = [];
+const valveLabel = ch => ch === 1 ? 'Confluence' : 'Tower ' + TOWERS.findIndex(t => t.fire === ch);
+const rxTs = () => { const d = new Date(); return d.toLocaleTimeString('en-US',{hour12:false}) + '.' + String(d.getMilliseconds()).padStart(3,'0'); };
+
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const setCh = (ch, v) => { if (ch>=1 && ch<=512) dmx[ch-1] = v & 0xFF; };
+const clearAll = () => dmx.fill(0);
+
+async function flush() { if (connected && !rxOn) await iface.sendFrame(dmx); }
+
+async function connect() {
+  if (!('serial' in navigator)) { $('connStatus').textContent = 'Web Serial not available — use Chrome or Edge.'; return; }
+  try {
+    await iface.open();
+    connected = true;
+    $('connState').className = 'pill on'; $('connState').textContent = 'connected';
+    $('connStatus').textContent = 'Connected. The interface holds the last frame sent; test buttons below.';
+    $('connectBtn').textContent = 'Disconnect';
+    $('blackoutBtn').disabled = false;
+    ['testPanel','quickPanel','verdictPanel','rxPanel'].forEach(p => $(p).hidden = false);
+    clearAll(); await flush();
+    keepalive = setInterval(flush, 1000); // Pro latches, but resend keeps it fresh
+  } catch (e) {
+    $('connStatus').textContent = 'Connect failed / cancelled: ' + e.message;
+  }
+}
+
+async function disconnect() {
+  if (keepalive) { clearInterval(keepalive); keepalive = null; }
+  clearAll(); try { await flush(); } catch {}
+  await iface.close();
+  connected = false; rxOn = false;
+  $('connState').className = 'pill off'; $('connState').textContent = 'disconnected';
+  $('connectBtn').textContent = 'Connect interface';
+  $('blackoutBtn').disabled = true;
+  ['testPanel','quickPanel','verdictPanel','rxPanel'].forEach(p => $(p).hidden = true);
+}
+
+// ---- per-tower test sequence -------------------------------------------------
+async function testTower(t, statusEl) {
+  if (busy) return; busy = true;
+  const say = s => statusEl.textContent = s;
+  const step = async (label, chans, ms=1400) => {
+    clearAll(); chans.forEach(([c,v]) => setCh(c,v)); await flush(); say(label); await sleep(ms);
+  };
+  try {
+    await step(`Tower ${t.n}: RED — strips + uplight should be red`, [[t.dR,STRIP_LEVEL],[t.uR,FULL]]);
+    await step(`Tower ${t.n}: GREEN`, [[t.dG,STRIP_LEVEL],[t.uG,FULL]]);
+    await step(`Tower ${t.n}: BLUE`,  [[t.dB,STRIP_LEVEL],[t.uB,FULL]]);
+    await step(`Tower ${t.n}: WHITE — uplight only (strips stay dark by design)`, [[t.uW,FULL]]);
+    if ($('armValves').checked) {
+      await step(`Tower ${t.n}: VALVE — listen for one click (CH${t.fire})`, [[t.fire,FULL]], 900);
+    } else {
+      say(`Tower ${t.n}: valve step skipped (arm the checkbox above to test it)`);
+    }
+    clearAll(); await flush();
+    say(`Tower ${t.n}: done. Did it show R, G, B, white${$('armValves').checked?' + click':''}?`);
+  } finally { busy = false; }
+}
+
+// ---- quick actions -----------------------------------------------------------
+async function quick(kind) {
+  if (busy || !connected) return; busy = true;
+  const say = s => $('quickStatus').textContent = s;
+  try {
+    if (kind === 'whiteAll') {
+      clearAll(); TOWERS.forEach(t => setCh(t.uW, FULL)); await flush();
+      say('All uplight white channels up. Anything totally dark = suspect that fixture/line.');
+    } else if (kind === 'rgbAll') {
+      for (const [name,key] of [['RED','R'],['GREEN','G'],['BLUE','B']]) {
+        clearAll();
+        TOWERS.forEach(t => { setCh(t['d'+key], STRIP_LEVEL); setCh(t['u'+key], FULL); });
+        await flush(); say('All fixtures ' + name); await sleep(1400);
+      }
+      clearAll(); await flush(); say('R/G/B cycle done.');
+    } else if (kind === 'valveSweep') {
+      if (!$('armValves').checked) { say('Arm the valve checkbox (gas off) first.'); return; }
+      for (const ch of VALVE_CHANNELS) {
+        clearAll(); setCh(ch, FULL); await flush();
+        say('Valve click on CH' + ch + (ch===1?' (Confluence)':'')); await sleep(800);
+        clearAll(); await flush(); await sleep(300);
+      }
+      say('Valve sweep done — each should have clicked once.');
+    } else if (kind === 'confluence') {
+      if (!$('armValves').checked) { say('Arm the valve checkbox (gas off) first.'); return; }
+      clearAll(); setCh(CONFLUENCE_VALVE, FULL); await flush();
+      say('Confluence solenoid CH1 open — listen for click'); await sleep(900);
+      clearAll(); await flush(); say('Confluence pulse done.');
+    }
+  } finally { busy = false; }
+}
+
+// ---- verdict helper ----------------------------------------------------------
+const VERDICTS = {
+  noresp:     ['bad',  'COMPONENT bad (or its power). The reference source is clean and the fixture ignored it — swap the decoder/uplight or check its supply.'],
+  noline:     ['line', 'LINE bad upstream. Cable, connector, or termination between the source and this point — test/replace that segment.'],
+  espflicker: ['line', 'Fixture is OK — controller / signal-path issue. Off a clean console it works; off the ESP32 it flickers → drive strength / termination. Run the termination test (60Ω?) and consider the opto splitter.'],
+  idlenoise:  ['line', 'LINE noise reaching a valve channel — electrical, not firmware. Keep gas OFF. Check termination and grounding; this is the phantom-fire path.'],
+};
+function showVerdict(key) {
+  const [cls, text] = VERDICTS[key];
+  const el = $('verdict');
+  el.className = 'verdict show ' + (cls==='bad'?'bad':cls==='line'?'line':'ok');
+  el.textContent = text;
+}
+
+// ---- RX monitor --------------------------------------------------------------
+function buildRxGrid() {
+  const g = $('rxGrid'); g.innerHTML = '';
+  for (let ch=1; ch<=ADDRESSED; ch++) {
+    const d = document.createElement('div');
+    d.className = 'cell' + (VALVE_CHANNELS.includes(ch)?' valve':'');
+    d.id = 'rx'+ch;
+    d.innerHTML = `<span class="n">${ch}</span><span class="v">–</span>`;
+    g.appendChild(d);
+  }
+}
+function updateRxGrid(chans) {
+  for (let ch=1; ch<=ADDRESSED; ch++) {
+    const cell = $('rx'+ch); if (!cell) continue;
+    const v = ch-1 < chans.length ? chans[ch-1] : 0;
+    cell.querySelector('.v').textContent = v;
+    cell.classList.toggle('hot', VALVE_CHANNELS.includes(ch) && v > 0);
+
+    // Change capture — only on valve channels, so theme animation never floods it.
+    if (VALVE_CHANNELS.includes(ch)) {
+      const prev = rxLast[ch];
+      if (prev !== -1 && prev !== v) { valveChanges[ch]++; logChange(ch, prev, v); }
+    }
+    rxLast[ch] = v;
+  }
+  renderValveStats();
+}
+
+function logChange(ch, from, to) {
+  const line = `[${rxTs()}] ${valveLabel(ch)} CH${ch}: ${from} → ${to}`;
+  rxLogLines.push(line);
+  if (rxLogLines.length > 500) rxLogLines.shift();
+  const el = $('rxLog');
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+  el.textContent = rxLogLines.join('\n');
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+function renderValveStats() {
+  $('valveStats').innerHTML = VALVE_CHANNELS.map(ch => {
+    const n = valveChanges[ch];
+    const val = rxLast[ch] < 0 ? '–' : rxLast[ch];
+    return `<span class="pill ${n===0?'on':'off'}">${valveLabel(ch)} (CH${ch}) = ${val} · ${n} changes</span>`;
+  }).join('');
+}
+
+function clearCapture() {
+  rxLogLines = [];
+  VALVE_CHANNELS.forEach(c => valveChanges[c] = 0);
+  rxLast.fill(-1);
+  $('rxLog').textContent = '';
+  renderValveStats();
+}
+
+async function copyLog() {
+  try { await navigator.clipboard.writeText(rxLogLines.join('\n')); $('rxStatus').textContent = 'Capture log copied to clipboard.'; }
+  catch { $('rxStatus').textContent = 'Copy failed — select the log text manually.'; }
+}
+async function toggleRx() {
+  if (!connected) return;
+  if (!rxOn) {
+    rxOn = true;
+    clearCapture();
+    $('rxState').className='pill on'; $('rxState').textContent='receiving';
+    $('rxToggle').textContent='Stop RX monitor';
+    $('rxStatus').textContent='TX paused. Watching received channels — hold Empty on the ESP32 and watch the valve rows.';
+    await iface.startReceive(updateRxGrid);
+  } else {
+    rxOn = false;
+    await iface.stopReceive();
+    $('rxState').className='pill off'; $('rxState').textContent='off';
+    $('rxToggle').textContent='Start RX monitor';
+    $('rxStatus').textContent='Stopped. TX resumed.';
+    await flush();
+  }
+}
+
+// ===========================================================================
+// Wire up UI
+// ===========================================================================
+function renderTowers() {
+  const host = $('towers');
+  TOWERS.forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'tower';
+    el.innerHTML = `
+      <h3>Tower ${t.n}</h3>
+      <p class="chmap">strips ${t.dR}/${t.dG}/${t.dB} · fire ${t.fire} · uplight ${t.uR}/${t.uG}/${t.uB}/${t.uW}</p>
+      <div class="row"><button class="primary run">Run test</button></div>
+      <p class="status"></p>`;
+    el.querySelector('.run').addEventListener('click', () => testTower(t, el.querySelector('.status')));
+    host.appendChild(el);
+  });
+}
+
+$('connectBtn').addEventListener('click', () => connected ? disconnect() : connect());
+$('blackoutBtn').addEventListener('click', async () => { clearAll(); await flush(); });
+document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => quick(b.dataset.quick)));
+document.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => showVerdict(b.dataset.v)));
+$('rxToggle').addEventListener('click', toggleRx);
+$('rxClear').addEventListener('click', clearCapture);
+$('rxCopy').addEventListener('click', copyLog);
+renderTowers();
+buildRxGrid();
+renderValveStats();
+</script>
+</body>
+</html>

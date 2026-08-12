@@ -1,15 +1,18 @@
 # Field Debugging Notes — DMX Noise / Spurious Solenoid Firing
 
-_Session dates: 2026-07-17 → 2026-07-20, continued 2026-07-29. Captured from the live field-debug conversations._
+_Session dates: 2026-07-17 → 2026-07-20, continued 2026-07-29 and 2026-08-04. Captured from the live field-debug conversations._
 
 ---
 
 ## ⚠ START HERE — device state as of 2026-07-29
 
-**The last flash left the rig regressed: the accumulator light is not working.** That
-appeared immediately after the final flash, which changed **two things at once** —
-frame length 64 → 128 slots, and refresh 50 Hz → 20 Hz. Suspect one of those before
-anything else.
+**ROOT CAUSE FOUND (Session 3, 2026-08-04) — see the Session 3 write-up below.** The whole
+solenoid saga is a **missing bus ground reference**: the M5 Unit DMX is galvanically isolated,
+so it gives the bus no ground, and the decoders' RS-485 receivers drift out of common-mode
+range and misread the valve channels. A grounded device on the bus (an Enttec) fixes it just
+by being connected. **The double-termination theory below is overturned** — adding a grounded
+device *helped*, so the bus was under-referenced, not over-loaded. The earlier 128-slot
+accumulator-light regression noted here was also fixed (slots reverted to 64, flashed 2026-08-05).
 
 ### What is on the device right now
 
@@ -19,39 +22,161 @@ anything else.
 | Uplight mode | 4-channel R/G/B/W | `towers.cpp` |
 | Tower fire valves | decoder CH4 → ch **8 / 23 / 38 / 53** | `towers.cpp` |
 | Break / MAB | **180 µs / 40 µs** | `dmx.cpp` — `BREAK_BAUD = 50000` |
-| Frame slots | **128** (ch 65–128 zero padding) | `dmx.h` — `DMX_FRAME_SLOTS` |
+| Frame slots | **64** (reverted from 128, 2026-08-05) | `dmx.h` — `DMX_FRAME_SLOTS` |
 | Refresh | **20 Hz** (50 ms) | `dmx.h` — `DMX_FRAME_INTERVAL_MS` |
 | Addressed channels | 64 | `dmx.h` — `DMX_SHADOW_SIZE` |
 | DMX writer | single (frame loop only) | `dmxKeepalive()` deleted |
+| DMX bus ground ref | **NONE from the M5** (isolated source) | root cause — Session 3 |
 
-### Fastest way back to a known-good baseline
+### Status (updated 2026-08-04)
 
-Both are one-line constants in [Test_Button_DMX/dmx.h](Test_Button_DMX/dmx.h):
+- The 128-slot regression is **fixed** — `DMX_FRAME_SLOTS` reverted to 64, flashed 2026-08-05.
+  Rate kept deliberately slow at 20 Hz; a `dmxReadyToSend()` TX-drain guard added.
+- **The solenoid saga's root cause is found (see Session 3 below): a missing bus ground
+  reference, caused by the M5 Unit DMX's galvanic isolation.** The fix is a grounded
+  re-driver or fail-safe bias on the fixture side — not a firmware change.
+- The **double-termination (60 Ω) hypothesis is overturned** — adding a grounded device (the
+  Enttec) *fixed* the bus, so it was under-referenced, not over-terminated. Metering pins 2–3
+  is still harmless to do, but it is no longer the top suspect.
 
-```cpp
-static const uint16_t DMX_FRAME_SLOTS       = 64;   // was 128
-static const uint8_t  DMX_FRAME_INTERVAL_MS = 20;   // was 50
-```
+---
 
-Reflash and confirm the accumulator light returns. Then change **one at a time**, so
-the next result is attributable to something.
+## Session 3 (2026-08-04) — ROOT CAUSE FOUND: isolated source, no bus ground reference
 
-### Leading hypothesis to test first — likely double termination
+_The solenoid saga is solved (diagnosis). Everything below is confirmed by direct observation
+and a multimeter, not theory._
 
-The transceiver is the **M5Stack Unit DMX**, which has a **120 Ω terminator built in**
-([docs/manuals/m5stack-unit-dmx.md](docs/manuals/m5stack-unit-dmx.md) line 56). If
-there is *also* a terminator at the last fixture, the bus is terminated **twice — 60 Ω**,
-which halves the load impedance and cuts the differential swing from a small driver.
+### The decisive observation
 
-That single fact would explain the entire history in this file:
+With an **Enttec DMX USB Pro** connected anywhere on the bus, the whole rig works — including
+the ESP32's **own webapp commands**: all solenoids fire, **in sync, only on command**, cleanly.
+Pull the Enttec out and the solenoids stop responding.
 
-- position-dependent failures (reduced swing → receivers nearest a null drop out first)
-- the manual console working (stronger driver copes with 60 Ω)
-- "more towers connected = more noise" (more unit loads on an already-overloaded bus)
+It works **whether the Enttec is transmitting or just listening** (RX monitor). The only thing
+the Enttec changes by its mere presence is the **electrical state of the bus** — and since
+drive-vs-listen makes no difference, it is supplying a **ground reference**, not drive strength.
 
-**Measure it: power the bus down, meter across XLR pins 2 and 3.** ~120 Ω = correct.
-**~60 Ω = two terminators, remove one.** Open/kΩ = none. This has been flagged three
-times and never measured; it is free and it is the top suspect.
+### Root cause
+
+The DMX source is the **M5Stack Unit DMX, which is galvanically isolated** (CA-IS3092W). Its
+DMX-side ground **floats**, so nothing anchors the A/B pair's common-mode voltage.
+
+RS-485 receivers only resolve A−B while **both wires sit inside their common-mode input range
+(≈ −7 V to +12 V of the receiver's own ground)**. With no reference the common-mode drifts
+(leakage, coupling, static) until the decoders' inputs rail — they can no longer read the
+difference and **misread the valve channels → solenoids don't fire, or chatter.** The Enttec is
+**non-isolated and laptop-grounded**; connecting it — even only to listen — hands the bus the
+reference it was missing, so the decoders un-rail and the ESP32's signal reads perfectly.
+
+### Multimeter confirmation
+
+Metered on the M5 Unit DMX: **the DMX-side ground does not connect to the accessible
+(logic/USB) ground — it is isolated.** So the M5 **cannot** provide a bus ground reference. This
+is not a fault to repair; the isolation is working as designed, and it is exactly the source of
+the problem.
+
+### What this overturns
+
+- **Double termination (60 Ω) — WRONG.** Adding a device (the Enttec) *helped*; a bus that
+  improves when you add load was **under-referenced, not over-terminated**.
+- **Weak transmitter / drive strength — not primary.** The Enttec fixes it while merely
+  *listening*, i.e. not driving at all.
+- **Firmware — exonerated (again).** The Enttec RX capture at the **end of the chain** showed
+  valve channels **1 / 8 / 23 / 38 / 53 all clean `0 → 255 → 0`, no noise** — so the firmware
+  commands every valve correctly (`flameLevel = 255`). The "tower solenoids not firing" was the
+  missing ground reference, **not** `flameLevel` and **not** DMX corruption.
+
+### Why a "balanced" protocol still needs a ground
+
+Differential signalling rejects common-mode noise **only within the receiver's common-mode input
+range**. The ground reference is what keeps both wires inside that window. **Isolated ≠
+groundless** — each isolated bus segment still needs its own **local** ground reference (DMX
+pin 1). "It's balanced, it doesn't need a ground" is the myth that leaves pin 1 floating and
+produces exactly these intermittent, layout-dependent failures.
+
+### The fix — reference from the RECEIVER (fixture) side, since the M5 can't provide it
+
+| # | Fix | Notes |
+|---|-----|-------|
+| 1 | **Fail-safe bias resistors** referenced to the decoders' ground (~680 Ω A→+5 V, B→GND, with the 120 Ω termination) | Cheap DIY. Anchors common-mode into range — exactly what the Enttec does passively. |
+| 2 | Keep a **grounded device** on the bus (the Enttec) | Proves the mechanism; not a field fix (no laptop dangling in the field). |
+| 3 | **Grounded, powered opto-isolated DMX splitter / re-driver** | **Recommended.** Output is ground-referenced to the fixtures → provides the reference **and** strong drive **and** per-branch termination. Enables hub-and-spoke (one tower per output). |
+
+> Caveat: a hard ground bond defeats the M5's isolation — fine on a single-supply rig, but if
+> towers ever run on **separate mains**, use a grounded re-driver (#3) to avoid ground loops.
+
+### In progress at session end (UNRESOLVED)
+
+Trying a **RioRand DMX amplifier** (an active, powered re-driver = fix #3), wired **inline**
+(M5 → amp **IN**, amp **OUT** → fixture chain). **Green LED flashing, but signal is not reaching
+the chain.** Suspects, in order:
+
+1. **Data polarity swap** (XLR pin 2 = Data−, pin 3 = Data+) on the amp output — the #1 cause.
+2. **IN/OUT reversed** (amplifiers are one-way).
+3. **GND terminal not wired** on the amp.
+4. **Termination** — need a single 120 Ω at the end of the amp's output chain.
+
+Next: put the **Enttec RX monitor on the amp's OUTPUT** — channels present = amp is driving,
+problem is downstream; nothing = amp isn't locking its input. Also drive the amp **INPUT** from
+the Enttec to isolate the M5→amp link.
+
+### Untested change — RC-coupled "soft ground" reference (2026-08-04)
+
+Instead of a hard bond, coupled the **M5 logic-side ground to the DMX bus ground through a
+330 Ω resistor in parallel with a 3 µF capacitor**. This gives the isolated bus a **soft ground
+reference** without a DC short: the resistor bleeds static / sets a current-limited DC
+reference, the cap (Xc ≈ 0.2 Ω at 250 kHz) shorts high-frequency common-mode to that reference.
+**It fires fine this way — but is NOT fully tested.**
+
+This is a **recognized technique** for referencing an isolated RS-485 node (TI/ADI app notes use
+an R‖C from isolated ground to local ground); it just isn't in DMX's pure-isolation model and
+isn't built into the bridge we bought.
+
+**Still to verify:**
+- Confirm it holds with the **Enttec removed** — this RC is meant to *replace* the Enttec as the
+  reference. That's the real pass/fail.
+- Test **all towers + a sustained purge hold**, watching for any return of the chatter.
+- It **partially bridges the M5 isolation** → fine on a single supply, but if towers ever run on
+  **separate mains**, ground-loop / leakage current flows through the RC. Check the **resistor's
+  power rating** and the **cap's voltage rating**; prefer the grounded re-driver (#3) for the field.
+- **3 µF is large** for this (typical: resistor + a nF-range cap). Works, but non-standard.
+
+### Firmware changes flashed this session (2026-08-05)
+
+- `DMX_FRAME_SLOTS` **128 → 64** — reverted the regression that had killed the accumulator light.
+- Frame rate kept **deliberately slow at 20 Hz** (`DMX_FRAME_INTERVAL_MS = 50`).
+- Added **`dmxReadyToSend()`** — queries `Serial1.availableForWrite()` and skips a frame if the
+  previous one hasn't fully drained, so a break can never land mid-frame.
+- Frame **sent/skipped counters** staged in `dmx.cpp`; valve-channel serial logging proposed but
+  **not yet flashed**.
+
+### Firmware behaviour confirmed (stop re-checking these)
+
+- **All solenoids fire in sync on button PRESS** (FSM `IDLE → FIRE_ACTIVE` on press). Release only
+  closes early in PARTY / MACHINE_GUN; **FIREBALL ignores release** and runs the full `fireDurationMs`.
+- **Uplights show the theme colour during fire**; the white is the **END_CUE fade** *after* the fire
+  ends. Fire/white independence kept (chosen — no change).
+- **Cooldown observed ≈ 50 ms** (effectively disabled) — confirm whether intended.
+- The `[DMX]` serial log prints **only CH1–5 and only on FSM state changes** → **blind to the tower
+  valves (8/23/38/53) and to purge.** That is why the serial log looked empty about the towers.
+
+### New tooling built
+
+- **`tools/dmx-tester/index.html`** — Web Serial reference console + RX monitor (Enttec Pro
+  protocol), with **change-capture logging** that timestamps every valve-channel change at the
+  chain end. Produced the clean capture above. Open in a Chromium browser (Edge/Chrome).
+- **`docs/spec-field-diagnostics.md`** — field kit + line-vs-component verdict method.
+
+### Next actions
+
+- [ ] Get the RioRand amp passing signal (polarity → IN/OUT → GND → termination); verify with the
+  Enttec RX monitor on its output.
+- [ ] **Confirm the fix:** amp (or bias resistors) in place, **Enttec removed**, fire from the
+  webapp → solenoids respond. That is the win condition.
+- [ ] For a permanent, field-portable answer, prefer the **grounded opto splitter (hub-and-spoke)**,
+  one tower per output.
+- [ ] Decide on fail-safe bias resistors if not using a re-driver.
+- [ ] (Optional) flash the valve-channel serial logging + frame counters for field visibility.
 
 ---
 

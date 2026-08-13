@@ -53,6 +53,24 @@ but is not fully field-tested — see the caveats in notes.md (it partially brid
 watch the resistor's power rating and the cap's voltage rating if towers ever run on separate
 mains).
 
+## Method 1: the production best practice (external isolation & re-driving)
+
+The safest and most reliable method is to **leave the M5 module completely isolated** and pass
+its floating output straight into a local, mains-grounded active device. Nothing is bridged
+across the barrier, so the R‖C bench network above becomes the fallback for when no splitter is
+on site rather than the thing the show depends on.
+
+1. **Connect directly to an opto-splitter.** Run a short DMX jumper — **under 2 m** — from the
+   M5 directly into the input of a professional, mains-powered DMX opto-splitter.
+2. **Bond the shield.** Connect **pin 1 (shield)** of this short jumper at **both** ends: the M5
+   and the opto-splitter input.
+3. **Establish the ground anchor.** The splitter's chassis / internal power supply is the primary
+   earth-ground bond point for the network. The splitter then regenerates completely fresh,
+   isolated, properly ground-referenced DMX branches out to the solenoids and fixtures.
+
+The M5 therefore never references the bus for anything longer than the jumper, and every branch
+downstream is referenced by the splitter to its own fixtures — the hub-and-spoke topology below.
+
 ## Running large chains reliably (documented practice)
 
 Nobody runs a big isolated rig off one weak, unreferenced source. The standard rules:

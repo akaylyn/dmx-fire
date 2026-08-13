@@ -6,12 +6,36 @@
 # and force a manual recovery. The lockfile below enforces this — do NOT
 # pkill or bypass it.
 #
-# IMPORTANT: This board (M5AtomS3, ESP32-S3 rev 0.2) has a USB-JTAG hardware
-# errata where the USB connection drops during 64 KB flash block erases if
-# all files are written in a single esptool session. The workaround is to
-# write the app binary one 64 KB block per esptool connection. Each block
-# takes ~20 s; a full 1.1 MB firmware takes ~5 minutes total but completes
-# reliably. DO NOT revert to a single-session write.
+# WHY THIS IS NOT A PLAIN `esptool write-flash`
+#
+# Writing the 1.1 MB app in one go has repeatedly dropped the USB connection
+# partway through on this board. The app is therefore written in blocks, each
+# hash-verified, with retries — so a drop costs one block, not the whole flash.
+#
+# The failure was long attributed to an "ESP32-S3 rev 0.2 64 KB block-erase
+# errata". No such errata is documented by Espressif, and the upstream bug it
+# was pinned to (esptool #832) was filed against esptool 4.4 and is CLOSED.
+# What Espressif *does* document for USB-Serial/JTAG is this:
+#
+#   "If the application accidentally reconfigures the USB peripheral pins or
+#    disables the USB peripheral, the device disappears from the system."
+#
+# That fits: this firmware brings up a WiFi AP, DMX on Serial1 and FastLED
+# within milliseconds of boot. The old loop ended every block with
+# `--after watchdog-reset`, so the app rebooted and started fighting for the
+# USB peripheral between all 18 blocks — 18 chances to wedge, and ~19 s of
+# reset+boot+resync overhead per block against ~0.5 s of actual writing
+# (measured: 8.8 s of data transfer inside a 461 s flash — about 2%).
+#
+# So the chip is now held in download mode for the whole run: every block uses
+# `--before no-reset --after no-reset`, and only the final block resets into
+# the new firmware. The app never runs mid-flash, which is exactly Espressif's
+# advice. If a block fails twice in no-reset mode the chip may genuinely have
+# fallen out of download mode, so attempt 3+ escalates to a full `usb-reset`.
+#
+# UNVERIFIED ON HARDWARE — written when no device was available to test. If it
+# misbehaves in the field, `--legacy` restores the exact previous behaviour
+# (full reset per block, 3 s settle) which is known to work, if slowly.
 #
 # IMPORTANT: Turn off Bluetooth before running this script.
 # macOS Bluetooth device enumeration can interfere with the USB-Serial/JTAG
@@ -19,12 +43,27 @@
 #
 # Usage:
 #   tests/visual/scripts/flash.sh
-#   tests/visual/scripts/flash.sh --erase   # also wipes NVS (config reset)
+#   tests/visual/scripts/flash.sh --erase    # also wipes NVS (config reset)
+#   tests/visual/scripts/flash.sh --legacy   # pre-optimisation behaviour
+#
+# Env:
+#   DMXFIRE_BLOCK_SIZE=65536   bytes per block. Raising it (e.g. 262144) means
+#                              fewer connections and is the next speed lever,
+#                              but is untested — change one thing at a time.
 
 set -euo pipefail
 
 ERASE=0
-[ "${1:-}" = "--erase" ] && ERASE=1
+LEGACY=0
+for arg in "$@"; do
+  case "$arg" in
+    --erase)  ERASE=1 ;;
+    --legacy) LEGACY=1 ;;
+  esac
+done
+
+# Bytes per app block. One esptool write per block, each hash-verified.
+BLOCK_SIZE="${DMXFIRE_BLOCK_SIZE:-65536}"
 
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
 FQBN="m5stack:esp32:m5stack_atoms3"
@@ -167,17 +206,32 @@ fi
 # Succeeds when output contains "Hash of data verified" (teardown errors are
 # expected on USB-JTAG and do not indicate a failed write).
 MAX_ATTEMPTS=12
+
+# do_flash <before> <after> <flash_addr> <file> [<flash_addr> <file> ...]
+#
+# <before>/<after> are esptool reset modes. Passing "no-reset" for both keeps
+# the chip parked in download mode across calls so the app never boots between
+# blocks — see the header. Retries are per call; a "no-reset" call that fails
+# twice escalates to a real reset, on the theory that the chip actually left
+# download mode and a plain resync can never recover it.
+#
+# Success is "Hash of data verified": USB-JTAG teardown errors are routine on
+# this board and do not mean the write failed.
 do_flash() {
-  # args: flash_addr file [flash_addr file ...]
+  local before="$1" after="$2"; shift 2
   local attempt=0
   while [ $attempt -lt $MAX_ATTEMPTS ]; do
     PORT=$(find /dev -maxdepth 1 -name 'cu.usbmodem*' 2>/dev/null | head -1)
     if [ -z "$PORT" ]; then
       sleep 2; attempt=$((attempt+1)); continue
     fi
+    local eff_before="$before"
+    if [ $attempt -ge 2 ] && [ "$before" = "no-reset" ]; then
+      eff_before="usb-reset"   # assume we fell out of download mode
+    fi
     local out
     out=$("$ESPTOOL" --chip esp32s3 -p "$PORT" -b 115200 \
-      --before usb-reset --after watchdog-reset \
+      --before "$eff_before" --after "$after" \
       --connect-attempts 10 \
       write-flash -z \
       --flash-mode dio --flash-freq 40m --flash-size keep \
@@ -186,7 +240,7 @@ do_flash() {
       echo "$out" | grep -E "Wrote [0-9]+ bytes|Hash of data verified"
       return 0
     fi
-    yellow "    attempt $((attempt+1)) failed: $(echo "$out" | grep -oE '(fatal error|serial exception)[^.]*' | head -1)"
+    yellow "    attempt $((attempt+1)) failed [$eff_before]: $(echo "$out" | grep -oE '(fatal error|serial exception)[^.]*' | head -1)"
     attempt=$((attempt+1))
     sleep 4
   done
@@ -218,31 +272,54 @@ if [ $ERASE -eq 1 ]; then
   done
 fi
 
-# Step 1: Write bootloader + partition table + OTA data in one fast call.
+APP_SIZE=$(wc -c < "$BIN_APP")
+TOTAL_BLOCKS=$(( (APP_SIZE + BLOCK_SIZE - 1) / BLOCK_SIZE ))
+
+if [ $LEGACY -eq 1 ]; then
+  # Pre-optimisation path: full chip reset per block, app boots in between,
+  # 3 s settle. Slow (~7 min) but known-good. Kept as the field fallback.
+  yellow "==> LEGACY mode: full reset per block (slow, known-good)"
+  BEFORE_FIRST="usb-reset"; AFTER_MID="watchdog-reset"; BEFORE_MID="usb-reset"
+  SETTLE=3
+else
+  # Hold the chip in download mode for the whole run so the app never boots
+  # between blocks. Only the last write resets into the new firmware.
+  BEFORE_FIRST="usb-reset"; AFTER_MID="no-reset";      BEFORE_MID="no-reset"
+  SETTLE=0
+fi
+
+# Step 1: bootloader + partition table + OTA data in one call. Leaves the chip
+# in download mode (non-legacy) so step 2's first block needs no reset.
 yellow "==> step 1/2: bootloader + partition table + OTA data"
-do_flash \
+do_flash "$BEFORE_FIRST" "$AFTER_MID" \
   0x0     "$BIN_BOOT" \
   0x8000  "$BIN_PART" \
   0xe000  "$BOOT_APP0" || { recovery_failover; exit 2; }
 
-sleep 3
+[ "$SETTLE" -gt 0 ] && sleep "$SETTLE"
 
-# Step 2: Write app binary one 64 KB block per connection.
-# One block per connection = one 64 KB erase per USB session, avoiding the
-# ESP32-S3 rev 0.2 USB-JTAG/flash-controller conflict.
-yellow "==> step 2/2: app binary (one 64 KB block per connection)"
-APP_SIZE=$(wc -c < "$BIN_APP")
+yellow "==> step 2/2: app binary ($TOTAL_BLOCKS blocks of $BLOCK_SIZE bytes)"
 BLOCK=0
 OFFSET=0
 while [ $OFFSET -lt "$APP_SIZE" ]; do
   FLASH_ADDR=$((0x10000 + OFFSET))
-  dd if="$BIN_APP" bs=65536 count=1 skip=$BLOCK of=/tmp/dmxfire_app_block.bin 2>/dev/null
-  BLOCK_SIZE=$(wc -c < /tmp/dmxfire_app_block.bin)
-  yellow "    block $BLOCK  addr=$(printf '0x%x' $FLASH_ADDR)  size=$BLOCK_SIZE bytes"
-  do_flash "$FLASH_ADDR" /tmp/dmxfire_app_block.bin || { recovery_failover; exit 2; }
+  dd if="$BIN_APP" bs="$BLOCK_SIZE" count=1 skip=$BLOCK of=/tmp/dmxfire_app_block.bin 2>/dev/null
+  THIS_SIZE=$(wc -c < /tmp/dmxfire_app_block.bin)
+
+  # The final block boots the device into the firmware just written; every
+  # earlier one leaves it parked in download mode.
+  AFTER="$AFTER_MID"
+  if [ $(( OFFSET + BLOCK_SIZE )) -ge "$APP_SIZE" ]; then
+    AFTER="watchdog-reset"
+  fi
+
+  yellow "    block $BLOCK/$TOTAL_BLOCKS  addr=$(printf '0x%x' $FLASH_ADDR)  size=$THIS_SIZE bytes"
+  do_flash "$BEFORE_MID" "$AFTER" "$FLASH_ADDR" /tmp/dmxfire_app_block.bin \
+    || { recovery_failover; exit 2; }
+
   BLOCK=$((BLOCK+1))
-  OFFSET=$((OFFSET+65536))
-  sleep 3
+  OFFSET=$((OFFSET+BLOCK_SIZE))
+  [ "$SETTLE" -gt 0 ] && sleep "$SETTLE"
 done
 
 rm -f /tmp/dmxfire_app_block.bin

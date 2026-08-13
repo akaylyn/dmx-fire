@@ -2,23 +2,70 @@
 
 ## Context
 
+> **USB is now the recovery path, not the primary one.** Firmware is normally
+> pushed over WiFi in seconds — see [spec-ota-update.md](spec-ota-update.md).
+> USB remains required for a bricked device, a device with no working WiFi, and
+> any bootloader or partition-table change (which OTA cannot touch).
+
 The M5AtomS3 (ESP32-S3 rev 0.2) presents two upload challenges that the naive `esptool write_flash` approach does not solve:
 
-1. **USB-JTAG flaky during large flash erases.** The device's USB-Serial/JTAG controller drops the host connection partway through a single-session write of the 1.1 MB app binary. This has been a recurring problem across many sessions, not a one-time event. The root cause is undocumented by Espressif; the symptom (random crashes mid-flash) is open bug [ESPTOOL-608](https://github.com/espressif/esptool/issues/832).
+1. **USB-JTAG drops the connection partway through a large write.** The device's USB-Serial/JTAG controller loses the host connection during a single-session write of the 1.1 MB app binary. This has been a recurring problem across many sessions, not a one-time event.
 2. **Boot-loop reflash.** Once the app partition is partially corrupted, the bootloader cycles fast enough that opening a clean download-mode session is timing-dependent.
 
-`scripts/flash.sh` (and the `/upload` skill that wraps it) solves both by writing the app **one 64 KB block per esptool connection**, with hash verification per block and retries on failure. A full flash takes ~5 minutes but completes deterministically.
+`scripts/flash.sh` (and the `/upload` skill that wraps it) writes the app **one block per esptool connection**, with hash verification per block and retries on failure, so a dropped connection costs one block rather than the whole flash.
+
+### Root cause: corrected
+
+This spec previously attributed the failure to an "ESP32-S3 rev 0.2 64 KB block-erase errata", citing [esptool #832](https://github.com/espressif/esptool/issues/832). That attribution does not hold up:
+
+- **No such errata is documented by Espressif.** This spec already conceded the root cause was "undocumented"; searching Espressif's own ESP32-S3 esptool troubleshooting documentation turns up no 64 KB block-erase issue at all.
+- **Issue #832 was filed against esptool 4.4 and is closed.** The toolchain now ships esptool **5.1.0**.
+
+What Espressif *does* document for USB-Serial/JTAG fits the symptoms directly:
+
+> "If the application accidentally reconfigures the USB peripheral pins or disables the USB peripheral, the device disappears from the system."
+
+This firmware brings up a WiFi AP, DMX on Serial1 and FastLED within milliseconds of boot. The original loop ended **every** block with `--after watchdog-reset`, so the app rebooted and contended for the USB peripheral between all 18 blocks — 18 opportunities to wedge, and ~19 s of reset/boot/resync per block.
+
+Measured on a real flash:
+
+| | |
+|---|---|
+| Wall clock | **461 s** (7m41s) |
+| Actual data transfer | **8.8 s** |
+| `sleep 3` between blocks | 54 s |
+| Connect/reset/stub overhead | ~400 s |
+| Efficiency | **~2%** |
+
+That flash failed on the final block and needed a physical power cycle — no software reset sequence (four esptool `--before` modes, manual DTR/RTS download-mode sequencing, 1200-baud touch) could clear the wedged controller.
+
+### What changed
+
+The chip is now **held in download mode for the whole run**: each block uses `--before no-reset --after no-reset`, and only the final block uses `watchdog-reset` to boot the new firmware. The app never runs mid-flash, which is exactly Espressif's guidance. The 3 s inter-block sleeps are gone.
+
+If a block fails twice in `no-reset` mode the chip may genuinely have left download mode, so attempt 3+ escalates to a full `usb-reset`.
+
+> ⚠️ **Unverified on hardware** — written when no device was available. `scripts/flash.sh --legacy` restores the exact previous behaviour (full reset per block, 3 s settle), which is slow but known to work. Use it if the new path misbehaves in the field.
+
+Block size is now `DMXFIRE_BLOCK_SIZE` (default **65536**, unchanged). Raising it to 262144 cuts 18 connections to 5 and is the next speed lever — deliberately *not* changed at the same time as the reset strategy, so a field failure has one variable, not two.
 
 ---
 
 ## Operator commands
 
 ```bash
-scripts/flash.sh            # compile (if needed) + flash
+scripts/ota.sh              # PREFERRED: compile + push over WiFi (seconds)
+
+scripts/flash.sh            # USB recovery: compile (if needed) + flash
 scripts/flash.sh --erase    # also wipes NVS partition (resets stored config to defaults)
+scripts/flash.sh --legacy   # pre-optimisation reset strategy (slow, known-good)
+
+scripts/flash-progress.sh <logfile>   # read-only progress bar for a running flash
 ```
 
 The `/upload` Claude Code skill invokes `scripts/flash.sh` directly.
+
+`scripts/flash-progress.sh` tails a captured flash log and renders a progress bar. It never opens the serial port, so it is safe to run alongside an in-flight flash. Capture a log with `scripts/flash.sh 2>&1 | tee /tmp/flash.log`.
 
 ---
 

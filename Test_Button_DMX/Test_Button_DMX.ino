@@ -27,6 +27,18 @@ m5::Button_Class keyButton;
 #define ATOM_RGB_PIN 35  // one-wire data line
 CRGB ATOM_LED[1];
 
+// Swap the uplight over to the configured fire look. Touches ONLY the uplight
+// fields — the accumulator strips (r/g/b) keep running the theme underneath, so
+// firing changes what the uplight shows without disturbing the strips.
+// White is assigned rather than max()'d: the fire look owns the uplight while a
+// valve is open, and the end-cue fade runs afterwards, never at the same time.
+static inline void applyFireLook(TowerState& s) {
+  s.ur    = buttonConfig.fireUpR;
+  s.ug    = buttonConfig.fireUpG;
+  s.ub    = buttonConfig.fireUpB;
+  s.white = buttonConfig.fireUpW;
+}
+
 void setup() {
   delay(500);
 
@@ -82,33 +94,62 @@ void loop() {
     // the FSM. Bypasses fireDurationMs and cooldown entirely.
     bool purge = purgeActive();
 
+    // Fire gate for this frame. fsmConsumeFirePending() drains a latch, so it is
+    // called EXACTLY ONCE per frame, before the tower loop — that way all five
+    // valves (four towers + Confluence) agree on the same frame, and a
+    // FIRE_ACTIVE window shorter than one frame still reaches the wire.
+    //
+    // Drained into its own variable rather than written inline as
+    // `(fsmState == FSM_FIRE_ACTIVE) || fsmConsumeFirePending()`: `||`
+    // short-circuits, so during a normal burn the latch would never be consumed
+    // and would then fire a spurious extra frame of valve-open after the FSM had
+    // already left FIRE_ACTIVE.
+    bool firePending = fsmConsumeFirePending();
+    bool firing = (fsmState == FSM_FIRE_ACTIVE) || firePending;
+
+    // MACHINE_GUN pulses every valve in lockstep — towers and Confluence alike.
+    // Off-time is one DMX frame, the shortest gap this bus can express.
+    bool mgOn = true;
+    if (buttonConfig.mode == 2) {
+      uint32_t period = (uint32_t)buttonConfig.machineGunBurstMs + DMX_FRAME_INTERVAL_MS;
+      mgOn = (millis() % period) < (uint32_t)buttonConfig.machineGunBurstMs;
+    }
+
     for (uint8_t i = 0; i < NUM_TOWERS; i++) {
       if (!towerConfigs[i].connected) continue;
 
-      // Theme renderer owns the per-frame colour + uplight white every state.
-      // Fire (decoder CH4) and the end-cue white flash are overlaid on top so
-      // firing never forces white and the white flash never opens the valve.
+      // Theme renderer owns the per-frame colour + uplight white in every state,
+      // for the strips (r/g/b) and the uplight (ur/ug/ub) alike. The fire look
+      // and the end-cue white flash are overlaid on top: the fire look moves only
+      // the uplight, so the strips keep running the theme underneath, and the
+      // white flash still never opens a valve.
       TowerState state = themeRender(towerConfigs[i].themeName, i, millis(),
                                      towerConfigs[i].bright, towerConfigs[i].speed);
 
-      switch (fsmState) {
-        case FSM_FIRE_ACTIVE:
-          // Open the per-tower propane valve; leave colour/white as the theme set them.
-          state.fire = towerConfigs[i].flameLevel;
-          break;
-        case FSM_END_CUE: {
-          // White flash fade on the uplight white channel (not the valve).
-          uint32_t elapsed = fsmElapsedMs();
-          uint8_t fade = (elapsed < 1000) ? (uint8_t)(255 - elapsed * 255 / 1000) : 0;
-          if (fade > state.white) state.white = fade;
-          break;
-        }
-        default:
-          break;  // IDLE / COOLDOWN: theme only
+      if (firing) {
+        // Open the per-tower propane valve and light the uplight to match. The
+        // uplight stays lit for the whole burn even in MACHINE_GUN mode — only
+        // the valve pulses, because strobing the uplight at the burst rate reads
+        // as a fault and is a photosensitivity hazard.
+        state.fire = mgOn ? towerConfigs[i].flameLevel : 0;
+        applyFireLook(state);
+      } else if (fsmState == FSM_END_CUE && buttonConfig.endCueMs > 0) {
+        // White flash fade on the uplight white channel (not the valve), scaled
+        // to the configured end-cue length.
+        uint32_t elapsed = fsmElapsedMs();
+        uint8_t  fade = (elapsed < (uint32_t)buttonConfig.endCueMs)
+                        ? (uint8_t)(255 - elapsed * 255 / buttonConfig.endCueMs)
+                        : 0;
+        if (fade > state.white) state.white = fade;
       }
+      // IDLE / COOLDOWN: theme only.
 
-      // Purge wins over the FSM: hold this tower's accumulator valve fully open.
-      if (purge) state.fire = towerConfigs[i].flameLevel;
+      // Purge wins over the FSM: hold this tower's accumulator valve fully open
+      // and light its uplight, so an open valve is never visually silent.
+      if (purge) {
+        state.fire = towerConfigs[i].flameLevel;
+        applyFireLook(state);
+      }
 
       towerWrite(i, state);
     }
@@ -119,15 +160,9 @@ void loop() {
         cfLevel = confluenceConfig.fireLevel;
       } else if (morseActive()) {
         cfLevel = morseTick();
-      } else if (fsmState == FSM_FIRE_ACTIVE) {
-        if (buttonConfig.mode == 2) {
-          // Machine gun: pulse solenoid — on for machineGunBurstMs, off for 50 ms
-          uint32_t period = (uint32_t)buttonConfig.machineGunBurstMs + 50;
-          cfLevel = (millis() % period < (uint32_t)buttonConfig.machineGunBurstMs)
-                    ? confluenceConfig.fireLevel : 0;
-        } else {
-          cfLevel = confluenceConfig.fireLevel;
-        }
+      } else if (firing) {
+        // Same mgOn gate as the tower valves above, so all five fire together.
+        cfLevel = mgOn ? confluenceConfig.fireLevel : 0;
       }
       confluenceWrite(cfLevel);
     }

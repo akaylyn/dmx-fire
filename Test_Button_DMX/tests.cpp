@@ -129,7 +129,8 @@ static void testDmxVisual() {
   INFO("Watch fixtures — if none respond, they are likely DIP-switched to old addresses");
 
   TowerState state = {};
-  state.r = state.g = state.b = 255;
+  state.r  = state.g  = state.b  = 255;  // accumulator strips (capped in towerWrite)
+  state.ur = state.ug = state.ub = 255;  // uplight RGB — separate fields since the fire-look split
   state.white = 255;   // uplight white channel
   state.fire  = 0;     // NEVER open the propane valves during a boot diagnostic
 

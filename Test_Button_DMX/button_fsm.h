@@ -7,8 +7,15 @@ struct ButtonConfig {
   uint8_t  mode;                // 0=FIREBALL, 1=PARTY, 2=MACHINE_GUN
   uint16_t fireDurationMs;      // max solenoid open time (default 3000 ms)
   uint16_t cooldownMs;          // lockout before next trigger (default 10000 ms)
-  uint8_t  endCuePattern;       // 0=white flash fade, 1=colour cascade
+  uint8_t  endCuePattern;       // 0=white flash fade; 1=colour cascade is NOT implemented
+  uint16_t endCueMs;            // END_CUE duration (default 1000 ms); 0 skips the state entirely
   uint16_t machineGunBurstMs;   // solenoid on-time per pulse in MACHINE_GUN mode (default 200 ms)
+
+  // Uplight colour held while a valve is open (FIRE_ACTIVE or purge). Global for
+  // the whole rig, not per tower. Default is amber with the white channel off.
+  // See docs/spec-fire-uplight.md.
+  uint8_t  fireUpR, fireUpG, fireUpB;
+  uint8_t  fireUpW;             // uplight white level during fire (default 0)
 };
 
 extern ButtonConfig buttonConfig;
@@ -19,6 +26,16 @@ void     buttonFsmSetup();
 // Pass the one-shot wasPressed/wasReleased flags and current held state.
 void     buttonFsmTick(bool wasPressed, bool wasReleased, bool isHeld);
 uint32_t fsmElapsedMs();
+
+// True if FIRE_ACTIVE was entered since the last call; clears the latch.
+//
+// The DMX block samples fsmState once per 50 ms frame (DMX_FRAME_INTERVAL_MS).
+// With a short fireDurationMs the whole FIRE_ACTIVE window can fall between two
+// frames, so a fast tap would command nothing and produce no fire at all. The
+// main loop ORs this latch into its `firing` flag so every trigger gets at least
+// one frame with the valve open — the shortest pulse this bus can express.
+// Call exactly once per frame. See docs/spec-rapid-retrigger.md.
+bool     fsmConsumeFirePending();
 
 // --- API-driven (virtual) button injection ---
 // Used by /api/button/* HTTP handlers and the web UI Test Fire button.

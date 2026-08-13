@@ -34,7 +34,12 @@ def baseline(device: Client):
     Uses short fireDurationMs/cooldownMs so timing-sensitive tests run fast.
     """
     device.reset()
-    device.set_button(mode=0, fireDurationMs=500, cooldownMs=2000, endCuePattern=0)
+    # endCueMs is pinned to the firmware default so the timing tests below see the
+    # same END_CUE they always did; tests that want rapid retrigger set it to 0.
+    device.set_button(
+        mode=0, fireDurationMs=500, cooldownMs=2000, endCuePattern=0, endCueMs=1000
+    )
+    device.set_fire_uplight(r=255, g=110, b=0, w=0)
     device.set_confluence(connected=True, fireLevel=255)
     for i in range(4):
         device.set_tower(i, connected=True, theme="green", brightness=128, speed=100, flameLevel=255)

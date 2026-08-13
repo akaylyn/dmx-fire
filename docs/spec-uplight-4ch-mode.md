@@ -36,10 +36,16 @@ the first **8** are claimed: 4 decoder + 4 uplight.
 | +2 | 2 | Decoder | Strip Green | theme G × 75% |
 | +3 | 3 | Decoder | Strip Blue | theme B × 75% |
 | +4 | 4 | Decoder | **FIRE valve** | `flameLevel` during `FIRE_ACTIVE`/purge, else 0 |
-| +5 | 1 | Uplight | Red | theme R, full brightness (uncapped) |
-| +6 | 2 | Uplight | Green | theme G |
-| +7 | 3 | Uplight | Blue | theme B |
-| +8 | 4 | Uplight | **White** | `state.white` — white themes / end-cue flash |
+| +5 | 1 | Uplight | Red | `state.ur` — theme R, or the fire look while a valve is open |
+| +6 | 2 | Uplight | Green | `state.ug` |
+| +7 | 3 | Uplight | Blue | `state.ub` |
+| +8 | 4 | Uplight | **White** | `state.white` — white themes / fire look / end-cue flash |
+
+> **Uplight RGB is no longer the same bytes as strip RGB.** `TowerState` gained
+> separate `ur`/`ug`/`ub` fields so the uplight can hold a flame colour while the
+> strips keep running the theme. `themeRender()` sets both to the same value, so
+> idle output is byte-identical to before. See
+> [spec-fire-uplight.md](spec-fire-uplight.md).
 | +9 … +15 | — | — | *unclaimed* | 0, every frame |
 
 **Fully resolved universe:**
@@ -86,11 +92,15 @@ Three fields were **removed**: `masterDim`, `rgbStrobe`, `wStrobe`. What remains
 
 ```cpp
 struct TowerState {
-  uint8_t r, g, b;   // theme colour — uplight (full) + strips (capped)
-  uint8_t white;     // uplight W — independent of fire
-  uint8_t fire;      // decoder CH4 — propane valve
+  uint8_t r, g, b;      // theme colour — accumulator strips (capped)
+  uint8_t ur, ug, ub;   // uplight RGB (full) — added later, see spec-fire-uplight.md
+  uint8_t white;        // uplight W — independent of fire
+  uint8_t fire;         // decoder CH4 — propane valve
 };
 ```
+
+(`ur`/`ug`/`ub` were added after this spec, splitting uplight colour from strip
+colour. They are plain colour fields and do **not** reopen the trap below.)
 
 4-channel mode is plain per-colour linear dimming: there is **no master dimmer**
 and **no strobe gate**, so there is nothing for those fields to drive. Brightness
@@ -221,8 +231,10 @@ Source of truth is `tools/web-preview/index.html`; mirrored into `web.cpp`'s
 `buildPage()` F-strings. No control changes — theme, brightness, speed and flame
 level behave exactly as before.
 
-`tools/web-preview/simulator.html` needs no change: it only ever modelled
-R/G/B/W per fixture, never the strobe or dimmer channels.
+`tools/web-preview/simulator.html` needed no change for the mode switch: it only ever
+modelled R/G/B/W per fixture, never the strobe or dimmer channels. (It was updated
+later for the uplight/strip colour split — see
+[spec-fire-uplight.md](spec-fire-uplight.md).)
 
 ---
 

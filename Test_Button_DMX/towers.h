@@ -8,11 +8,17 @@ static const uint8_t NUM_TOWERS = 4;
 //
 // The uplight runs in 4-channel mode (R/G/B/W linear dimming), so there is no
 // master dimmer and no strobe channel to drive: brightness is baked into
-// r/g/b/white by themeRender().
+// r/g/b/ur/ug/ub/white by themeRender().
+//
+// Strip RGB and uplight RGB are SEPARATE fields so the uplight can show the
+// fire look while the accumulator strips keep running the theme underneath.
+// themeRender() sets both to the same colour; the main loop overrides only
+// ur/ug/ub (and white) while a valve is open — see docs/spec-fire-uplight.md.
 struct TowerState {
-  uint8_t r, g, b;      // theme colour — uplight RGB (full) + accumulator strips (capped)
+  uint8_t r, g, b;      // theme colour — accumulator strips only (capped in towerWrite)
+  uint8_t ur, ug, ub;   // uplight RGB (full) — theme colour, or the fire look while firing
   uint8_t white;        // uplight white channel (4-ch mode CH4) — independent of fire
-  uint8_t fire;         // accumulator decoder CH4 — propane valve, FIRE_ACTIVE only
+  uint8_t fire;         // accumulator decoder CH4 — propane valve, FIRE_ACTIVE/purge only
 };
 
 // Web-configurable idle state for one tower.

@@ -15,8 +15,13 @@ def test_state_shape(device):
     assert isinstance(fsm["elapsed_ms"], int)
 
     button = s["button"]
-    for k in ("mode", "fireDurationMs", "cooldownMs", "endCuePattern"):
+    for k in ("mode", "fireDurationMs", "cooldownMs", "endCuePattern", "endCueMs",
+              "machineGunBurstMs"):
         assert k in button
+
+    fire_up = s["fireUplight"]
+    for k in ("r", "g", "b", "w"):
+        assert 0 <= fire_up[k] <= 255
 
     conf = s["confluence"]
     assert isinstance(conf["connected"], bool)
@@ -44,6 +49,8 @@ def test_baseline_applied(device):
     assert s["button"]["mode"] == 0
     assert s["button"]["fireDurationMs"] == 500
     assert s["button"]["cooldownMs"] == 2000
+    assert s["button"]["endCueMs"] == 1000
+    assert s["fireUplight"] == {"r": 255, "g": 110, "b": 0, "w": 0}
     assert s["confluence"]["connected"] is True
     assert s["confluence"]["fireLevel"] == 255
     for t in s["towers"]:

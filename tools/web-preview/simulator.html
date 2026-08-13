@@ -237,6 +237,18 @@
       Theme speed (%) <span class='val' id='speedVal'>100</span>
       <input type='range' id='speed' min='10' max='400' value='100'>
     </label>
+    <label>
+      Fire uplight
+      <input type='color' id='fireUpColor' value='#ff6e00'>
+    </label>
+    <label>
+      Fire uplight white <span class='val' id='fireUpWVal'>0</span>
+      <input type='range' id='fireUpW' min='0' max='255' value='0'>
+    </label>
+    <label>
+      End cue (ms) <span class='val' id='endCueVal'>1000</span>
+      <input type='range' id='endCueMs' min='0' max='2000' step='10' value='1000'>
+    </label>
     <button id='playPause'>Pause</button>
     <button id='fireBtn' title='Press &amp; hold to fire (local sim only)'>Press &amp; hold to fire</button>
     <button id='applyBtn' title='POST target=all to /set'>Push to all towers &rarr;</button>
@@ -405,7 +417,10 @@
           r: Math.round(c.r * scale),
           g: Math.round(c.g * scale),
           b: Math.round(c.b * scale),
-          w: brightness,
+          // Colour themes leave the uplight white channel OFF — their white
+          // "tips" come from the gradient's RGB. Mirrors themes.cpp's
+          // `s.white = 0` for green/blue/fire.
+          w: 0,
           on: true
         };
       }
@@ -460,6 +475,11 @@
     var speedInput  = document.getElementById('speed');
     var speedVal    = document.getElementById('speedVal');
     var playBtn     = document.getElementById('playPause');
+    var fireUpColor = document.getElementById('fireUpColor');
+    var fireUpWIn   = document.getElementById('fireUpW');
+    var fireUpWVal  = document.getElementById('fireUpWVal');
+    var endCueIn    = document.getElementById('endCueMs');
+    var endCueVal   = document.getElementById('endCueVal');
 
     var uplights = [0,1,2,3].map(function (i) { return document.getElementById('up' + i); });
     var strips   = [0,1,2,3].map(function (i) { return document.getElementById('strip' + i); });
@@ -476,12 +496,24 @@
     var playing = true;
 
     // -- Local fire state machine: mirrors the firmware FSM's fire/end-cue. --
-    // idle -> (press) firing -> (release) endcue -> idle. The end-cue is a
-    // 1000 ms white fade on the UPLIGHT white channel only (strips have no W,
-    // the valve is unaffected) — matching Test_Button_DMX.ino.
+    // idle -> (press) firing -> (release) endcue -> idle. The end-cue is a white
+    // fade on the UPLIGHT white channel only (strips have no W, the valve is
+    // unaffected) — matching Test_Button_DMX.ino. Its length is the endCueMs
+    // control; 0 skips the state entirely, exactly like the firmware FSM.
     var fireState = 'idle';
     var endcueStartMs = 0;
-    var END_CUE_MS = 1000;
+
+    // Uplight colour held while the valve is open — mirrors buttonConfig.fireUp*
+    // and applyFireLook() in Test_Button_DMX.ino.
+    function fireLook() {
+      var h = fireUpColor.value;
+      return {
+        r: parseInt(h.substr(1, 2), 16),
+        g: parseInt(h.substr(3, 2), 16),
+        b: parseInt(h.substr(5, 2), 16),
+        w: parseInt(fireUpWIn.value, 10)
+      };
+    }
 
     function lampColor(r, g, b, w, on) {
       // Composite: warm-white channel adds a yellow-ish tint at high w.
@@ -509,14 +541,17 @@
       }
       lastFrameMs = now;
 
-      // End-cue auto-completes after END_CUE_MS (uses real time, not sim time).
+      // End-cue auto-completes after the configured length (real time, not sim
+      // time). endCueMs == 0 means the state does not exist.
+      var endCueMs = parseInt(endCueIn.value, 10);
       var endCueFade = 0;
       if (fireState === 'endcue') {
         var e = now - endcueStartMs;
-        if (e >= END_CUE_MS) { fireState = 'idle'; }
-        else { endCueFade = Math.round(255 * (1 - e / END_CUE_MS)); }
+        if (endCueMs === 0 || e >= endCueMs) { fireState = 'idle'; }
+        else { endCueFade = Math.round(255 * (1 - e / endCueMs)); }
       }
       var firing = (fireState === 'firing');
+      var fl = fireLook();
 
       var theme = themeSel.value;
       var brightness = parseInt(brightInput.value, 10);
@@ -524,18 +559,25 @@
       for (var i = 0; i < 4; i++) {
         var f = renderTheme(theme, i, simNowMs, brightness);
 
-        // Uplight: full RGBW; end-cue white flash overlays the white channel.
+        // Uplight takes its RGB from ur/ug/ub, which follow the theme until a
+        // valve opens — then the fire look owns them for the whole burn. The
+        // end-cue white flash overlays the white channel afterwards.
+        var ur = f.r, ug = f.g, ub = f.b, uOn = f.on;
         var upW = Math.max(f.w, endCueFade);
-        paint(uplights[i], lampColor(f.r, f.g, f.b, upW, f.on || upW > 0));
+        if (firing) {
+          ur = fl.r; ug = fl.g; ub = fl.b; upW = fl.w; uOn = true;
+        }
+        paint(uplights[i], lampColor(ur, ug, ub, upW, uOn || upW > 0));
 
-        // Strips: RGB-only, capped, no white channel and no end-cue flash.
+        // Strips: RGB-only, capped, no white channel, no end-cue flash — and
+        // deliberately NOT touched by the fire look.
         var sr = Math.round(f.r * STRIP_PCT);
         var sg = Math.round(f.g * STRIP_PCT);
         var sb = Math.round(f.b * STRIP_PCT);
         paint(strips[i], lampColor(sr, sg, sb, 0, sr + sg + sb > 0));
 
         valves[i].classList.toggle('firing', firing);
-        chs[i].textContent = 'uplight R=' + f.r + ' G=' + f.g + ' B=' + f.b + ' W=' + upW;
+        chs[i].textContent = 'uplight R=' + ur + ' G=' + ug + ' B=' + ub + ' W=' + upW;
       }
 
       confluence.classList.toggle('firing', firing);
@@ -546,6 +588,8 @@
 
     brightInput.addEventListener('input', function () { brightVal.textContent = brightInput.value; });
     speedInput.addEventListener('input', function () { speedVal.textContent = speedInput.value; });
+    fireUpWIn.addEventListener('input', function () { fireUpWVal.textContent = fireUpWIn.value; });
+    endCueIn.addEventListener('input', function () { endCueVal.textContent = endCueIn.value; });
     playBtn.addEventListener('click', function () {
       playing = !playing;
       playBtn.textContent = playing ? 'Pause' : 'Play';

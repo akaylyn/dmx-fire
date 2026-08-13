@@ -73,8 +73,25 @@ static uint32_t scaleTime(uint32_t nowMs, uint16_t speedPct) {
   return (uint32_t)((uint64_t)nowMs * speedPct / 100);
 }
 
+// Theme body. Sets only the strip-side r/g/b plus white; the public wrapper
+// below mirrors r/g/b into the uplight fields so no theme has to know about the
+// strip/uplight split. Declared ahead of use for the unknown-theme recursion.
+static TowerState themeRenderInner(const String& name, uint8_t index, uint32_t nowMs,
+                                   uint8_t brightness, uint16_t speedPct);
+
 TowerState themeRender(const String& name, uint8_t index, uint32_t nowMs,
                        uint8_t brightness, uint16_t speedPct) {
+  TowerState s = themeRenderInner(name, index, nowMs, brightness, speedPct);
+  // By default the uplight shows exactly what the strips show. The main loop
+  // overrides ur/ug/ub while a valve is open — see docs/spec-fire-uplight.md.
+  s.ur = s.r;
+  s.ug = s.g;
+  s.ub = s.b;
+  return s;
+}
+
+static TowerState themeRenderInner(const String& name, uint8_t index, uint32_t nowMs,
+                                   uint8_t brightness, uint16_t speedPct) {
   // The uplight runs in 4-channel mode (R/G/B/W linear dimming), so brightness
   // is baked straight into r/g/b/white below — there is no master dimmer to set
   // and no strobe gate to hold open.

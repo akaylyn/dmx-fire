@@ -11,7 +11,8 @@
 
   Default values shown below match the firmware defaults in storage.cpp:
     button:     mode=0 (Fireball), fireDurationMs=3000, cooldownMs=10000,
-                endCuePattern=0, machineGunBurstMs=200
+                endCuePattern=0, endCueMs=1000, machineGunBurstMs=200
+    fire uplight: colour #ff6e00 (amber), white=0
     confluence: connected=true, fireLevel=255
     towers[0..3]: connected=true, palette=green, brightness=128, flameLevel=255
     morse:      unit=150
@@ -575,22 +576,37 @@
             <option value='2'>Machine Gun</option>
           </select></label>
           <label>Fire duration (ms)<div class='sr'>
-            <input type='range' name='fireDurationMs' min='50' max='10000' step='50' value='3000' oninput="this.nextElementSibling.textContent=this.value">
+            <input type='range' name='fireDurationMs' min='10' max='10000' step='10' value='3000' oninput="this.nextElementSibling.textContent=this.value">
             <span class='val'>3000</span>
           </div></label>
           <div id='mgRow' style='display:none'>
             <label>Machine gun burst (ms)<div class='sr'>
-              <input type='range' name='machineGunBurstMs' min='50' max='2000' step='50' value='200' oninput="this.nextElementSibling.textContent=this.value">
+              <input type='range' name='machineGunBurstMs' min='10' max='2000' step='10' value='200' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>200</span>
             </div></label>
           </div>
           <label>Cooldown (ms)<div class='sr'>
-            <input type='range' name='cooldownMs' min='50' max='30000' step='50' value='10000' oninput="this.nextElementSibling.textContent=this.value">
+            <input type='range' name='cooldownMs' min='0' max='30000' step='10' value='10000' oninput="this.nextElementSibling.textContent=this.value">
             <span class='val'>10000</span>
           </div></label>
-          <label>End cue<select name='endCuePattern'>
-            <option value='0' selected>White flash fade</option>
-          </select></label>
+          <label>End cue (ms)<div class='sr'>
+            <input type='range' name='endCueMs' min='0' max='2000' step='10' value='1000' oninput="this.nextElementSibling.textContent=this.value">
+            <span class='val'>1000</span>
+          </div></label>
+          <p class='dmx-addr'>Set <strong>End cue</strong> to 0 to skip the white-flash state entirely &mdash; that is what gates rapid retrigger. The DMX bus runs at 20&nbsp;Hz, so a valve can only change once per <strong>50&nbsp;ms</strong> frame: shorter durations round up to one frame and the fastest achievable shot cycle is about 100&nbsp;ms.</p>
+          <button type='submit'>Save</button>
+        </form>
+      </fieldset>
+      <fieldset>
+        <legend>Fire Uplight</legend>
+        <p class='dmx-addr'>Colour the uplights hold while <strong>any valve is open</strong> &mdash; firing or Empty Accumulator. Applies to all four towers. The accumulator strips are not affected and keep running their theme.</p>
+        <form method='POST' action='/set'>
+          <input type='hidden' name='target' value='fireup'>
+          <label>Colour<input type='color' name='fireUpColor' value='#ff6e00'></label>
+          <label>White<div class='sr'>
+            <input type='range' name='fireUpW' min='0' max='255' step='1' value='0' oninput="this.nextElementSibling.textContent=this.value">
+            <span class='val'>0</span>
+          </div></label>
           <button type='submit'>Save</button>
         </form>
       </fieldset>

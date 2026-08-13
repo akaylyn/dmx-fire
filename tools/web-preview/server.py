@@ -66,8 +66,11 @@ STATE = {
         "fireDurationMs": 3000,
         "cooldownMs": 10000,
         "endCuePattern": 0,
+        "endCueMs": 1000,
         "machineGunBurstMs": 200,
     },
+    # Uplight colour held while any valve is open. Global, not per tower.
+    "fireUplight": {"r": 255, "g": 110, "b": 0, "w": 0},
     "confluence": {"connected": True, "fireLevel": 255},
     # `speed` is a percentage where 100 = normal. Scales time-based theme
     # behaviour (flash cycle, Simon beat, rainbow hue rotation, candle flicker).
@@ -98,11 +101,18 @@ def simulate_fire_cycle() -> None:
     """Mimic the firmware FSM: FIRE_ACTIVE -> END_CUE -> COOLDOWN -> IDLE."""
     fire_ms = STATE["button"]["fireDurationMs"]
     cool_ms = STATE["button"]["cooldownMs"]
-    end_cue_ms = 300
+    end_cue_ms = STATE["button"]["endCueMs"]
     with LOCK:
         set_fsm("FIRE_ACTIVE")
 
     def to_end_cue():
+        # endCueMs == 0 skips END_CUE entirely, same as the firmware FSM.
+        if end_cue_ms == 0:
+            with LOCK:
+                if STATE["fsm"]["state"] == "FIRE_ACTIVE":
+                    set_fsm("COOLDOWN")
+            schedule(cool_ms, to_idle)
+            return
         with LOCK:
             if STATE["fsm"]["state"] == "FIRE_ACTIVE":
                 set_fsm("END_CUE")
@@ -130,8 +140,16 @@ def update_config(target: str, args: dict[str, str]) -> None:
             fireDurationMs=int(args.get("fireDurationMs", 3000)),
             cooldownMs=int(args.get("cooldownMs", 10000)),
             endCuePattern=int(args.get("endCuePattern", 0)),
+            endCueMs=int(args.get("endCueMs", 1000)),
             machineGunBurstMs=int(args.get("machineGunBurstMs", 200)),
         )
+    elif target == "fireup":
+        colour = args.get("fireUpColor", "")
+        if len(colour) == 7 and colour[0] == "#":
+            STATE["fireUplight"].update(
+                r=int(colour[1:3], 16), g=int(colour[3:5], 16), b=int(colour[5:7], 16)
+            )
+        STATE["fireUplight"]["w"] = int(args.get("fireUpW", 0))
     elif target == "confluence":
         STATE["confluence"]["connected"] = "connected" in args
         STATE["confluence"]["fireLevel"] = int(args.get("fireLevel", 0))
@@ -163,6 +181,8 @@ def build_state_json() -> bytes:
         "uptime_ms": now - STATE["boot_ms"],
         "fsm": {"state": fsm["state"], "elapsed_ms": now - fsm["since_ms"]},
         "button": STATE["button"],
+        "fireUplight": STATE["fireUplight"],
+        "ota": {"inProgress": False, "lastError": ""},
         "confluence": STATE["confluence"],
         "towers": STATE["towers"],
         "morse": STATE["morse"],

@@ -48,11 +48,20 @@ Central confluence solenoid occupies CH1–4 (**CH1 = central valve**; 3-channel
 ### Main loop (`Test_Button_DMX.ino`)
 
 `themeRender()` runs every frame for colour + white. The FSM overlays:
-- `FIRE_ACTIVE`: `state.fire = towerConfigs[i].flameLevel` (valve opens; colour/white untouched).
-- `END_CUE`: white-flash fade applied to `state.white` (uplight), not the valve.
+- `FIRE_ACTIVE`: `state.fire = towerConfigs[i].flameLevel` (valve opens) **and the uplight takes the configured fire look** — see below.
+- `END_CUE`: white-flash fade applied to `state.white` (uplight), not the valve. Scaled to `buttonConfig.endCueMs`.
 - IDLE/COOLDOWN: theme only.
 
-So firing during a colour theme = colour + flames (no white); selecting `bright_white` = white uplight + no fire.
+> **Superseded in part by [spec-fire-uplight.md](spec-fire-uplight.md).** The original
+> rule here was that firing left "colour/white untouched", so the uplight stayed
+> purely theme-driven while the valve was open. That is no longer true: while any
+> valve is open the uplight holds a configurable warm flame colour, and `TowerState`
+> gained separate `ur`/`ug`/`ub` fields so the uplight can move independently of the
+> accumulator strips. What has **not** changed is the channel separation this spec
+> exists to document — fire is decoder CH4, white is uplight CH4, and neither drives
+> the other. The **accumulator strips are still purely theme-driven in every state.**
+
+So firing during a colour theme = flame-coloured uplight + animated strips + flames; selecting `bright_white` = white uplight + no fire.
 
 ---
 
@@ -76,7 +85,7 @@ No new NVS fields. `flameLevel` already persists. `STRIP_BRIGHTNESS_PCT` is a co
 
 ## Non-goals
 
-- **A manual per-tower white slider.** "White on demand" is served by the white themes; a dedicated white level config could be added later (uplight CH11) if independent colour + white is wanted simultaneously.
+- **A manual per-tower white slider.** "White on demand" is served by the white themes. A *global* white level for the fire look was since added — see [spec-fire-uplight.md](spec-fire-uplight.md) — but there is still no per-tower white control.
 - **Independent strobe vs. strip colour.** Both fixtures share one colour config.
 - **Configurable strip cap via the UI.** Compile-time constant for now.
 - **Auto-addressing fixtures over DMX/RDM.** Operators set fixture addresses by hand to the values above.

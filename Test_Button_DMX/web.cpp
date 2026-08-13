@@ -92,6 +92,25 @@ static String rangeSlider(const String& label, const String& name,
   return s;
 }
 
+// "#rrggbb" for <input type='color'>, which accepts nothing else.
+static String hexColor(uint8_t r, uint8_t g, uint8_t b) {
+  char buf[8];
+  snprintf(buf, sizeof(buf), "#%02x%02x%02x", r, g, b);
+  return String(buf);
+}
+
+// Parse "#rrggbb" back into bytes. Leaves the outputs untouched on a malformed
+// value so a bad POST can never blank the fire look.
+static void parseHexColor(const String& hex, uint8_t& r, uint8_t& g, uint8_t& b) {
+  if (hex.length() != 7 || hex[0] != '#') return;
+  char* end = nullptr;
+  long v = strtol(hex.c_str() + 1, &end, 16);
+  if (end != hex.c_str() + 7) return;  // trailing junk — reject
+  r = (uint8_t)((v >> 16) & 0xff);
+  g = (uint8_t)((v >>  8) & 0xff);
+  b = (uint8_t)( v        & 0xff);
+}
+
 static String connectedCheck(const String& id, bool checked) {
   String s = F("<div class='cr'>"
                "<input type='checkbox' name='connected' id='");
@@ -303,21 +322,34 @@ static String buildPage() {
   s += F(">Machine Gun</option>"
          "</select></label>");
   s += rangeSlider("Fire duration (ms)", "fireDurationMs",
-                   buttonConfig.fireDurationMs, 50, 10000, 50);
+                   buttonConfig.fireDurationMs, 10, 10000, 10);
   s += F("<div id='mgRow'");
   if (buttonConfig.mode != 2) s += F(" style='display:none'");
   s += F(">");
   s += rangeSlider("Machine gun burst (ms)", "machineGunBurstMs",
-                   buttonConfig.machineGunBurstMs, 50, 2000, 50);
+                   buttonConfig.machineGunBurstMs, 10, 2000, 10);
   s += F("</div>");
   s += rangeSlider("Cooldown (ms)", "cooldownMs",
-                   buttonConfig.cooldownMs, 50, 30000, 50);
-  s += F("<label>End cue<select name='endCuePattern'>"
-         "<option value='0'");
-  if (buttonConfig.endCuePattern == 0) s += F(" selected");
-  s += F(">White flash fade</option>"
-         "</select></label>"
-         "<button type='submit'>Save</button></form></fieldset></section>");
+                   buttonConfig.cooldownMs, 0, 30000, 10);
+  s += rangeSlider("End cue (ms)", "endCueMs",
+                   buttonConfig.endCueMs, 0, 2000, 10);
+  s += F("<p class='dmx-addr'>Set <strong>End cue</strong> to 0 to skip the white-flash "
+         "state entirely &mdash; that is what gates rapid retrigger. The DMX bus runs at "
+         "20&nbsp;Hz, so a valve can only change once per <strong>50&nbsp;ms</strong> frame: "
+         "shorter durations round up to one frame and the fastest achievable shot cycle is "
+         "about 100&nbsp;ms.</p>"
+         "<button type='submit'>Save</button></form></fieldset>"
+         "<fieldset><legend>Fire Uplight</legend>"
+         "<p class='dmx-addr'>Colour the uplights hold while <strong>any valve is open</strong> "
+         "&mdash; firing or Empty Accumulator. Applies to all four towers. The accumulator "
+         "strips are not affected and keep running their theme.</p>"
+         "<form method='POST' action='/set'>"
+         "<input type='hidden' name='target' value='fireup'>"
+         "<label>Colour<input type='color' name='fireUpColor' value='");
+  s += hexColor(buttonConfig.fireUpR, buttonConfig.fireUpG, buttonConfig.fireUpB);
+  s += F("'></label>");
+  s += rangeSlider("White", "fireUpW", buttonConfig.fireUpW, 0, 255);
+  s += F("<button type='submit'>Save</button></form></fieldset></section>");
 
   // --- Morse tab ---
   s += F("<section class='tab' data-tab='morse' role='tabpanel' hidden>"
@@ -510,8 +542,25 @@ static void handleSet() {
     buttonConfig.mode              = (uint8_t)server.arg("mode").toInt();
     buttonConfig.fireDurationMs    = (uint16_t)server.arg("fireDurationMs").toInt();
     buttonConfig.cooldownMs        = (uint16_t)server.arg("cooldownMs").toInt();
-    buttonConfig.endCuePattern     = (uint8_t)server.arg("endCuePattern").toInt();
     buttonConfig.machineGunBurstMs = (uint16_t)server.arg("machineGunBurstMs").toInt();
+    // endCuePattern is no longer a form control (the "colour cascade" variant was
+    // never implemented), but the field is still persisted and reported. Only
+    // overwrite it when a client actually sends it.
+    if (server.hasArg("endCuePattern"))
+      buttonConfig.endCuePattern = (uint8_t)server.arg("endCuePattern").toInt();
+    if (server.hasArg("endCueMs"))
+      buttonConfig.endCueMs = (uint16_t)server.arg("endCueMs").toInt();
+
+  } else if (target == "fireup") {
+    // Uplight colour held while a valve is open. Accepts either the colour-input
+    // form ("#rrggbb") or explicit byte fields, so tests can post either shape.
+    if (server.hasArg("fireUpColor"))
+      parseHexColor(server.arg("fireUpColor"),
+                    buttonConfig.fireUpR, buttonConfig.fireUpG, buttonConfig.fireUpB);
+    if (server.hasArg("fireUpR")) buttonConfig.fireUpR = (uint8_t)server.arg("fireUpR").toInt();
+    if (server.hasArg("fireUpG")) buttonConfig.fireUpG = (uint8_t)server.arg("fireUpG").toInt();
+    if (server.hasArg("fireUpB")) buttonConfig.fireUpB = (uint8_t)server.arg("fireUpB").toInt();
+    if (server.hasArg("fireUpW")) buttonConfig.fireUpW = (uint8_t)server.arg("fireUpW").toInt();
 
   } else if (target == "all") {
     String   themeName  = server.arg("theme");
@@ -681,8 +730,20 @@ static void handleApiState() {
   s += buttonConfig.cooldownMs;
   s += F(",\"endCuePattern\":");
   s += buttonConfig.endCuePattern;
+  s += F(",\"endCueMs\":");
+  s += buttonConfig.endCueMs;
   s += F(",\"machineGunBurstMs\":");
   s += buttonConfig.machineGunBurstMs;
+  s += '}';
+
+  s += F(",\"fireUplight\":{\"r\":");
+  s += buttonConfig.fireUpR;
+  s += F(",\"g\":");
+  s += buttonConfig.fireUpG;
+  s += F(",\"b\":");
+  s += buttonConfig.fireUpB;
+  s += F(",\"w\":");
+  s += buttonConfig.fireUpW;
   s += '}';
 
   s += F(",\"confluence\":{\"connected\":");

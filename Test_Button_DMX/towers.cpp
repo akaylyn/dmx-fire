@@ -32,8 +32,10 @@ static const uint16_t STRIP_BRIGHTNESS_PCT = 75;
 // Write state to one tower. Each tower has TWO fixtures sharing one config:
 //   Decoder (4ch): CH1-3 = accumulator strip RGB (capped); CH4 = FIRE valve only.
 //   Uplight (4ch): LaluceNatz LL960S in 4-channel mode — R, G, B, W direct.
-// Fire (decoder CH4) and white (uplight CH4) are independent: firing never
-// lights the white channel, and white never opens the valve.
+// The two fixtures take their colour from different fields (r/g/b vs ur/ug/ub),
+// so the uplight can go to the fire look while the strips stay on the theme.
+// Fire (decoder CH4) and white (uplight CH4) remain independent channels: the
+// valve byte never lights white, and white never opens the valve.
 //
 // Layout (matches the DMX address labels shown in the web UI):
 //   Confluence (central solenoid): CH 1..4              (CH 1 = central valve)
@@ -56,11 +58,13 @@ void towerWrite(uint8_t index, const TowerState& state) {
   // 4-channel mode is plain linear dimming per colour: no master dimmer and no
   // strobe gate to open, so brightness must already be baked into the state
   // values (themeRender() does this) and there is nothing else to send.
+  // Uplight RGB comes from ur/ug/ub, NOT r/g/b: while a valve is open the main
+  // loop swaps the uplight to the fire look and leaves the strips on the theme.
   const uint16_t s = base + 4;  // uplight block starts after the decoder
-  dmxShadowWrite(state.r,     s + 1);  // CH1: Red (full, uncapped)
-  dmxShadowWrite(state.g,     s + 2);  // CH2: Green
-  dmxShadowWrite(state.b,     s + 3);  // CH3: Blue
-  dmxShadowWrite(state.white, s + 4);  // CH4: White (independent of fire)
+  dmxShadowWrite(state.ur,    s + 1);  // CH1: Red (full, uncapped)
+  dmxShadowWrite(state.ug,    s + 2);  // CH2: Green
+  dmxShadowWrite(state.ub,    s + 3);  // CH3: Blue
+  dmxShadowWrite(state.white, s + 4);  // CH4: White (independent of the valve)
 
   // --- Unclaimed tail of the stride ---
   // No fixture listens here in 4-channel mode. Drive it to 0 anyway so these

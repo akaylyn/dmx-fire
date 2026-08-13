@@ -117,6 +117,137 @@ def test_unclaimed_channels_stay_zero(device):
     assert not nonzero, f"unclaimed channels must be 0, got {nonzero}"
 
 
+def test_uplight_shows_fire_look_while_firing(device):
+    """While a valve is open the uplight holds the configured fire colour.
+
+    The default themes (green/blue/fire) blank for 3200 ms of every 4000 ms cycle,
+    so before this the uplights were dark for most of a burn. The strips must be
+    unaffected — they keep running the theme.
+    """
+    device.reset()
+    device.set_fire_uplight(r=255, g=110, b=0, w=0)
+    device.set_all_towers(theme="green", brightness=128, flameLevel=200)
+    device.set_button(mode=0, fireDurationMs=3000, cooldownMs=2000)
+    device.press()
+    device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
+
+    # Sample across more than one full 4000 ms flash cycle: the uplight must read
+    # the fire colour on EVERY sample, including the theme's OFF phase.
+    seen = set()
+    deadline = time.monotonic() + 2.5
+    while time.monotonic() < deadline:
+        s = device.get_state()
+        if s["fsm"]["state"] != "FIRE_ACTIVE":
+            break
+        for up in TOWER_UPLIGHT_CH:
+            seen.add(tuple(ch(s, up + n) for n in range(4)))
+        time.sleep(0.1)
+
+    assert seen == {(255, 110, 0, 0)}, (
+        f"uplight must hold the fire colour for the whole burn, saw {sorted(seen)}"
+    )
+
+
+def test_fire_look_does_not_touch_strips(device):
+    """The fire look is uplight-only; accumulator strips keep rendering the theme."""
+    device.reset()
+    device.set_fire_uplight(r=255, g=110, b=0, w=0)
+    # bright_white renders continuously, so the strips have a stable expected value.
+    device.set_all_towers(theme="bright_white", brightness=200, flameLevel=200)
+    device.set_button(mode=0, fireDurationMs=2000, cooldownMs=2000)
+    device.press()
+    device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
+    time.sleep(0.1)
+    s = device.get_state()
+
+    strip_expected = 200 * 75 // 100  # STRIP_BRIGHTNESS_PCT in towers.cpp
+    for i, up in enumerate(TOWER_UPLIGHT_CH):
+        assert tuple(ch(s, up + n) for n in range(4)) == (255, 110, 0, 0), (
+            f"tower {i} uplight should show the fire look during FIRE_ACTIVE"
+        )
+        strip_r = TOWER_FIRE_CH[i] - 3
+        assert ch(s, strip_r) == strip_expected, (
+            f"tower {i} strip red (ch {strip_r}) must stay on the theme at {strip_expected}, "
+            f"got {ch(s, strip_r)} — the fire look must not touch the strips"
+        )
+
+
+def test_uplight_returns_to_theme_after_fire(device):
+    """Once the valve closes the uplight goes back to the theme."""
+    device.reset()
+    device.set_fire_uplight(r=255, g=110, b=0, w=0)
+    device.set_all_towers(theme="bright_white", brightness=200, flameLevel=200)
+    device.set_button(mode=0, fireDurationMs=300, cooldownMs=2000, endCueMs=0)
+    device.press()
+    device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
+    device.release()
+    device.wait_for_state("COOLDOWN", timeout=2.0)
+    time.sleep(0.2)
+    s = device.get_state()
+    for i, up in enumerate(TOWER_UPLIGHT_CH):
+        vals = tuple(ch(s, up + n) for n in range(4))
+        assert vals == (200, 200, 200, 200), (
+            f"tower {i} uplight should be back on the theme in COOLDOWN, got {vals}"
+        )
+
+
+def test_purge_lights_uplights_and_opens_all_valves(device):
+    """Purge holds every valve open, so it must light the uplights too."""
+    device.reset()
+    device.set_fire_uplight(r=0, g=255, b=136, w=64)
+    device.set_confluence(connected=True, fireLevel=255)
+    device.set_all_towers(theme="green", brightness=128, flameLevel=200)
+    device.purge_start()
+    try:
+        time.sleep(0.2)
+        s = device.get_state()
+        assert s["purge"] is True
+        assert ch(s, CONFLUENCE_FIRE_CH) == 255
+        for i, fire_ch in enumerate(TOWER_FIRE_CH):
+            assert ch(s, fire_ch) == 200, f"tower {i} valve should be open during purge"
+        for i, up in enumerate(TOWER_UPLIGHT_CH):
+            vals = tuple(ch(s, up + n) for n in range(4))
+            assert vals == (0, 255, 136, 64), (
+                f"tower {i} uplight should show the fire look during purge, got {vals}"
+            )
+    finally:
+        device.purge_stop()
+
+
+def test_machine_gun_pulses_tower_valves(device):
+    """MACHINE_GUN pulses the tower valves, not just the central solenoid.
+
+    Previously the tower valves sat flat open for the whole burn while only
+    Confluence pulsed. Both must now drop to 0 during a burst's off-phase.
+    """
+    device.reset()
+    device.set_confluence(connected=True, fireLevel=255)
+    device.set_all_towers(theme="green", brightness=128, flameLevel=200)
+    device.set_button(
+        mode=2, fireDurationMs=3000, cooldownMs=2000, endCueMs=0, machineGunBurstMs=100
+    )
+    device.press()
+    device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
+
+    tower_vals, cf_vals = set(), set()
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        s = device.get_state()
+        if s["fsm"]["state"] != "FIRE_ACTIVE":
+            break
+        tower_vals.add(ch(s, TOWER_FIRE_CH[0]))
+        cf_vals.add(ch(s, CONFLUENCE_FIRE_CH))
+        time.sleep(0.03)
+    device.release()
+
+    assert {0, 200} <= tower_vals, (
+        f"tower valve should pulse between 0 and flameLevel in MACHINE_GUN, saw {sorted(tower_vals)}"
+    )
+    assert {0, 255} <= cf_vals, (
+        f"confluence should pulse between 0 and fireLevel in MACHINE_GUN, saw {sorted(cf_vals)}"
+    )
+
+
 def test_disconnected_tower_skipped(device):
     """A disconnected tower should not have its channels written during FIRE_ACTIVE.
 

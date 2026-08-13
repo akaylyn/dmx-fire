@@ -38,7 +38,14 @@ void storageLoad() {
   buttonConfig.fireDurationMs    = prefs.getUShort("btnfire",   3000);
   buttonConfig.cooldownMs        = prefs.getUShort("btncool",   10000);
   buttonConfig.endCuePattern     = prefs.getUChar("btncue",     0);
+  buttonConfig.endCueMs          = prefs.getUShort("btncuems",  1000);
   buttonConfig.machineGunBurstMs = prefs.getUShort("btnmgburst", 200);
+
+  // Uplight fire look — global, defaults to amber with white off.
+  buttonConfig.fireUpR = prefs.getUChar("fireupr", 255);
+  buttonConfig.fireUpG = prefs.getUChar("fireupg", 110);
+  buttonConfig.fireUpB = prefs.getUChar("fireupb", 0);
+  buttonConfig.fireUpW = prefs.getUChar("fireupw", 0);
 
   prefs.end();
 }
@@ -72,7 +79,13 @@ void storageSave() {
   prefs.putUShort("btnfire",    buttonConfig.fireDurationMs);
   prefs.putUShort("btncool",    buttonConfig.cooldownMs);
   prefs.putUChar("btncue",      buttonConfig.endCuePattern);
+  prefs.putUShort("btncuems",   buttonConfig.endCueMs);
   prefs.putUShort("btnmgburst", buttonConfig.machineGunBurstMs);
+
+  prefs.putUChar("fireupr", buttonConfig.fireUpR);
+  prefs.putUChar("fireupg", buttonConfig.fireUpG);
+  prefs.putUChar("fireupb", buttonConfig.fireUpB);
+  prefs.putUChar("fireupw", buttonConfig.fireUpW);
 
   prefs.end();
 }

@@ -48,6 +48,14 @@ class Client:
     def reset(self) -> None:
         self._post("/api/button/reset")
 
+    # ---- purge / empty accumulator (bypasses the FSM entirely) ----
+
+    def purge_start(self) -> None:
+        self._post("/api/purge/start")
+
+    def purge_stop(self) -> None:
+        self._post("/api/purge/stop")
+
     # ---- configuration (form-urlencoded /set) ----
 
     def set_confluence(self, *, connected: bool, fireLevel: int) -> None:
@@ -63,16 +71,30 @@ class Client:
         fireDurationMs: int,
         cooldownMs: int,
         endCuePattern: int = 0,
+        endCueMs: int = 1000,
+        machineGunBurstMs: int | None = None,
     ) -> None:
+        data: dict[str, Any] = {
+            "target": "button",
+            "mode": mode,
+            "fireDurationMs": fireDurationMs,
+            "cooldownMs": cooldownMs,
+            "endCuePattern": endCuePattern,
+            "endCueMs": endCueMs,
+        }
+        if machineGunBurstMs is not None:
+            data["machineGunBurstMs"] = machineGunBurstMs
+        self._post("/set", data=data)
+
+    def set_fire_uplight(self, *, r: int, g: int, b: int, w: int = 0) -> None:
+        """Set the global uplight colour held while any valve is open.
+
+        Posts explicit byte fields rather than the "#rrggbb" colour input the web
+        UI uses; handleSet() accepts either shape.
+        """
         self._post(
             "/set",
-            data={
-                "target": "button",
-                "mode": mode,
-                "fireDurationMs": fireDurationMs,
-                "cooldownMs": cooldownMs,
-                "endCuePattern": endCuePattern,
-            },
+            data={"target": "fireup", "fireUpR": r, "fireUpG": g, "fireUpB": b, "fireUpW": w},
         )
 
     def set_all_towers(

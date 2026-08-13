@@ -9,6 +9,8 @@ secrets.h
 # Logs (kept locally, not committed)
 logs/*.log
 logs/serial/
+# One per flash.sh run, plus the flash-latest.log symlink
+tests/visual/runs/*.log
 
 # Arduino build artifacts
 Test_Button_DMX/build/

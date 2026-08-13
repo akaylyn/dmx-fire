@@ -60,12 +60,25 @@ scripts/flash.sh            # USB recovery: compile (if needed) + flash
 scripts/flash.sh --erase    # also wipes NVS partition (resets stored config to defaults)
 scripts/flash.sh --legacy   # pre-optimisation reset strategy (slow, known-good)
 
-scripts/flash-progress.sh <logfile>   # read-only progress bar for a running flash
+scripts/flash-progress.sh             # read-only progress bar for the current flash
+scripts/flash-progress.sh --once      # print one progress line and exit
 ```
 
 The `/upload` Claude Code skill invokes `scripts/flash.sh` directly.
 
-`scripts/flash-progress.sh` tails a captured flash log and renders a progress bar. It never opens the serial port, so it is safe to run alongside an in-flight flash. Capture a log with `scripts/flash.sh 2>&1 | tee /tmp/flash.log`.
+### Flash logs and the progress bar
+
+Every `flash.sh` run tees itself to `tests/visual/runs/flash-<YYYYmmdd-HHMMSS>.log` (gitignored, 20 newest kept) and points the `tests/visual/runs/flash-latest.log` symlink at the run in progress. Terminal output is unchanged — the tee is additional. `DMXFIRE_FLASH_LOG=<path>` overrides the location.
+
+`scripts/flash-progress.sh` therefore **takes no arguments**: it resolves the log itself.
+
+1. If the lockfile holds a live pid, it follows `flash-latest.log` — the flash happening right now, even if some older log has a newer mtime.
+2. Otherwise it takes the most recently written `tests/visual/runs/flash-*.log` or `/tmp/flash*.log`, so hand-captured `tee` logs and finished runs still work.
+3. If a flash holds the lock but has not opened its log yet, it waits up to 20 s for the file to appear. With no flash running and no log anywhere, it exits 2 immediately rather than hanging.
+
+A path may still be passed explicitly (`scripts/flash-progress.sh <logfile>`) to inspect an older run; `--once` works in any argument position. The chosen-log note goes to stderr, so stdout stays a single parseable progress line.
+
+The script is read-only: it tails a log and never opens the serial port, so it is safe to run alongside an in-flight flash.
 
 ---
 

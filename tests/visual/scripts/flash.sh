@@ -171,6 +171,23 @@ if [ -e "$LOCKFILE" ]; then
 fi
 echo "$$" > "$LOCKFILE"
 
+# Every run tees itself to its own log so scripts/flash-progress.sh can find it
+# without being told which file to read: the newest flash-*.log is the current
+# run, and flash-latest.log points at it while it is live. Output still goes to
+# the terminal as before. Written only after the lock is taken, so a refused
+# concurrent run never repoints flash-latest.log at itself.
+RUNS_DIR="$(dirname "$LOCKFILE")"
+FLASH_LOG="${DMXFIRE_FLASH_LOG:-$RUNS_DIR/flash-$(date +%Y%m%d-%H%M%S).log}"
+mkdir -p "$(dirname "$FLASH_LOG")"
+ln -sf "$FLASH_LOG" "$RUNS_DIR/flash-latest.log"
+# Keep the 20 newest previous logs (this run's is created just below, by tee).
+# Each is a few KB, but one per upload adds up.
+ls -t "$RUNS_DIR"/flash-*.log 2>/dev/null | grep -v '/flash-latest\.log$' \
+  | tail -n +21 | xargs rm -f 2>/dev/null || true
+exec > >(tee "$FLASH_LOG") 2>&1
+echo "==> logging to $FLASH_LOG"
+echo "==> progress bar: scripts/flash-progress.sh   (no arguments needed)"
+
 BUILD="$SKETCH/build/m5stack.esp32.m5stack_atoms3"
 BIN_BOOT="$BUILD/Test_Button_DMX.ino.bootloader.bin"
 BIN_PART="$BUILD/Test_Button_DMX.ino.partitions.bin"

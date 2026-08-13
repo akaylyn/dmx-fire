@@ -513,6 +513,7 @@
       <button type='button' data-tab='morse' role='tab'>Morse</button>
       <button type='button' data-tab='confluence' role='tab'>Confluence</button>
       <button type='button' data-tab='towers' role='tab'>Tower Configs</button>
+      <button type='button' data-tab='firmware' role='tab'>Firmware</button>
     </nav>
   </header>
 
@@ -846,6 +847,22 @@
         </fieldset>
       </div>
     </section>
+
+    <!-- ===== FIRMWARE (OTA) ===== -->
+    <section class='tab' data-tab='firmware' role='tabpanel' hidden>
+      <h2>Firmware Update</h2>
+      <fieldset>
+        <legend>Upload over WiFi</legend>
+        <p class='dmx-addr'>Upload <code>Test_Button_DMX.ino.bin</code> straight to the device over WiFi &mdash; no USB cable. Takes seconds. The device reboots itself when the upload finishes.</p>
+        <p class='testfire-hint'><strong>The rig must be idle.</strong> An upload stops the DMX loop, so every valve is driven closed before it starts and the device refuses the upload unless the FSM is IDLE and no purge or morse is running.</p>
+        <label>Firmware file<input type='file' id='fwFile' accept='.bin'></label>
+        <div class='btn-row'>
+          <button type='button' class='btn' id='fwUpload'>Upload firmware</button>
+        </div>
+        <div class='sr'><progress id='fwProgress' value='0' max='100' style='width:100%'></progress><span class='val' id='fwPct'>0%</span></div>
+        <p class='dmx-addr' id='fwStatus'>Idle.</p>
+      </fieldset>
+    </section>
   </main>
 
   <script>
@@ -1043,6 +1060,64 @@
       closeBtn.addEventListener('click', hide);
       modal.addEventListener('click', function (e) {
         if (e.target === modal) hide();
+      });
+    })();
+
+    // ---- OTA firmware upload ----
+    // XMLHttpRequest rather than fetch(): fetch gives no upload progress events,
+    // and a 1.1 MB push over the device AP is slow enough to need a bar.
+    // The device reboots the moment it accepts the image, so the request often
+    // dies mid-response — a dropped connection after 100% is success, not error.
+    (function () {
+      var file = document.getElementById('fwFile');
+      var go = document.getElementById('fwUpload');
+      var bar = document.getElementById('fwProgress');
+      var pct = document.getElementById('fwPct');
+      var status = document.getElementById('fwStatus');
+      if (!file || !go) return;
+
+      function say(msg) { status.textContent = msg; }
+
+      go.addEventListener('click', function () {
+        if (!file.files || !file.files.length) { say('Pick a .bin file first.'); return; }
+        var f = file.files[0];
+        say('Checking device state...');
+        fetch('/api/state').then(function (r) { return r.json(); }).then(function (s) {
+          if (s.fsm.state !== 'IDLE' || s.purge) {
+            say('Refused: device is not idle (fsm=' + s.fsm.state + ', purge=' + s.purge + ').');
+            return;
+          }
+          var fd = new FormData();
+          fd.append('firmware', f, f.name);
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/update');
+          xhr.upload.addEventListener('progress', function (e) {
+            if (!e.lengthComputable) return;
+            var p = Math.round(e.loaded * 100 / e.total);
+            bar.value = p; pct.textContent = p + '%';
+          });
+          xhr.addEventListener('load', function () {
+            if (xhr.status === 200) {
+              bar.value = 100; pct.textContent = '100%';
+              say('Upload complete — device is rebooting. Reload in a few seconds.');
+            } else {
+              say('Failed (HTTP ' + xhr.status + '): ' + xhr.responseText);
+            }
+            go.disabled = false;
+          });
+          xhr.addEventListener('error', function () {
+            // Reboot races the response; treat a drop at ~100% as success.
+            if (bar.value >= 99) {
+              say('Upload complete — device rebooting (connection dropped, expected).');
+            } else {
+              say('Upload failed at ' + bar.value + '% — connection lost.');
+            }
+            go.disabled = false;
+          });
+          go.disabled = true;
+          say('Uploading ' + Math.round(f.size / 1024) + ' KB...');
+          xhr.send(fd);
+        }).catch(function (e) { say('Cannot reach device: ' + e.message); });
       });
     })();
   </script>

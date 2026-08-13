@@ -12,6 +12,7 @@
 #include "storage.h"
 #include "secrets.h"
 #include "dmx.h"
+#include "ota.h"
 #include "web.h"
 
 static const char* AP_SSID = WIFI_SSID;
@@ -125,7 +126,7 @@ static String connectedCheck(const String& id, bool checked) {
 
 static String buildPage() {
   String s;
-  s.reserve(32000);
+  s.reserve(36000);  // grown by the Firmware/OTA tab + its upload script
 
   // --- Head + CSS ---
   s += F("<!DOCTYPE html><html><head>"
@@ -258,6 +259,7 @@ static String buildPage() {
          "<button type='button' data-tab='morse' role='tab'>Morse</button>"
          "<button type='button' data-tab='confluence' role='tab'>Confluence</button>"
          "<button type='button' data-tab='towers' role='tab'>Tower Configs</button>"
+         "<button type='button' data-tab='firmware' role='tab'>Firmware</button>"
          "</nav></header><main>");
 
   // --- Test Fire tab ---
@@ -435,7 +437,28 @@ static String buildPage() {
     s += rangeSlider("Flame level", "flameLevel", towerConfigs[i].flameLevel, 0, 255);
     s += F("<button type='submit'>Save</button></form></fieldset></div>");
   }
-  s += F("</section></main>");
+  s += F("</section>");
+
+  // --- Firmware (OTA) tab ---
+  s += F("<section class='tab' data-tab='firmware' role='tabpanel' hidden>"
+         "<h2>Firmware Update</h2>"
+         "<fieldset><legend>Upload over WiFi</legend>"
+         "<p class='dmx-addr'>Upload <code>Test_Button_DMX.ino.bin</code> straight to the "
+         "device over WiFi &mdash; no USB cable. Takes seconds. The device reboots itself "
+         "when the upload finishes.</p>"
+         "<p class='testfire-hint'><strong>The rig must be idle.</strong> An upload stops the "
+         "DMX loop, so every valve is driven closed before it starts and the device refuses "
+         "the upload unless the FSM is IDLE and no purge or morse is running.</p>"
+         "<label>Firmware file<input type='file' id='fwFile' accept='.bin'></label>"
+         "<div class='btn-row'>"
+         "<button type='button' class='btn' id='fwUpload'>Upload firmware</button>"
+         "</div>"
+         "<div class='sr'><progress id='fwProgress' value='0' max='100' style='width:100%'>"
+         "</progress><span class='val' id='fwPct'>0%</span></div>"
+         "<p class='dmx-addr' id='fwStatus'>Idle.</p>"
+         "</fieldset></section>");
+
+  s += F("</main>");
 
   // --- Script (minified): tab nav, sub-tabs, auto-save, fire button +
   //     arm-cover (boot_id-gated), mgRow toggle, morse, captive escape. ---
@@ -512,6 +535,33 @@ static String buildPage() {
          "b.addEventListener('click',function(){fetch('/api/captive/dismiss',{method:'POST'}).then(sh,sh);});"
          "c.addEventListener('click',hd);"
          "m.addEventListener('click',function(e){if(e.target===m)hd();});})();"
+         // OTA upload. XMLHttpRequest, not fetch: fetch exposes no upload
+         // progress, and the device reboots the instant it accepts the image,
+         // so a dropped connection at ~100% is success rather than an error.
+         "(function(){var f=document.getElementById('fwFile');"
+         "var g=document.getElementById('fwUpload');"
+         "var bar=document.getElementById('fwProgress');"
+         "var pc=document.getElementById('fwPct');"
+         "var st=document.getElementById('fwStatus');"
+         "if(!f||!g)return;function say(m){st.textContent=m;}"
+         "g.addEventListener('click',function(){"
+         "if(!f.files||!f.files.length){say('Pick a .bin file first.');return;}"
+         "var fl=f.files[0];say('Checking device state...');"
+         "fetch('/api/state').then(function(r){return r.json();}).then(function(s){"
+         "if(s.fsm.state!=='IDLE'||s.purge){"
+         "say('Refused: device is not idle (fsm='+s.fsm.state+', purge='+s.purge+').');return;}"
+         "var fd=new FormData();fd.append('firmware',fl,fl.name);"
+         "var x=new XMLHttpRequest();x.open('POST','/api/update');"
+         "x.upload.addEventListener('progress',function(e){if(!e.lengthComputable)return;"
+         "var p=Math.round(e.loaded*100/e.total);bar.value=p;pc.textContent=p+'%';});"
+         "x.addEventListener('load',function(){if(x.status===200){bar.value=100;pc.textContent='100%';"
+         "say('Upload complete — device is rebooting. Reload in a few seconds.');}"
+         "else{say('Failed (HTTP '+x.status+'): '+x.responseText);}g.disabled=false;});"
+         "x.addEventListener('error',function(){if(bar.value>=99){"
+         "say('Upload complete — device rebooting (connection dropped, expected).');}"
+         "else{say('Upload failed at '+bar.value+'% — connection lost.');}g.disabled=false;});"
+         "g.disabled=true;say('Uploading '+Math.round(fl.size/1024)+' KB...');x.send(fd);"
+         "}).catch(function(e){say('Cannot reach device: '+e.message);});});})();"
          "</script></body></html>");
   return s;
 }
@@ -722,6 +772,12 @@ static void handleApiState() {
   s += F(",\"purge\":");
   s += (purgeActive() ? F("true") : F("false"));
 
+  s += F(",\"ota\":{\"inProgress\":");
+  s += (otaInProgress() ? F("true") : F("false"));
+  s += F(",\"lastError\":\"");
+  s += otaLastError();
+  s += F("\"}");
+
   s += F(",\"button\":{\"mode\":");
   s += buttonConfig.mode;
   s += F(",\"fireDurationMs\":");
@@ -852,6 +908,9 @@ void webSetup() {
       server.send(200, "text/plain", F("Success"));
     }
   });
+  // OTA firmware upload — registered last so its route wins over onNotFound.
+  otaRegister(server);
+
   server.begin();
   LOG_I("HTTP server + captive portal DNS started");
 }

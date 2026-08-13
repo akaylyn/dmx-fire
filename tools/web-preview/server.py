@@ -291,6 +291,13 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):  # noqa: N802
+        # /api/update carries a BINARY firmware image. It must be routed before
+        # _read_form(), which reads the whole body and utf-8 decodes it — that
+        # throws on binary and the request dies with no response at all.
+        if self.path == "/api/update":
+            self._handle_ota()
+            return
+
         args = self._read_form()
         if self.path == "/set":
             target = args.get("target", "?")
@@ -338,6 +345,33 @@ class Handler(BaseHTTPRequestHandler):
             self._send(204)
         else:
             self._send(404, b"not found")
+
+    def _handle_ota(self) -> None:
+        """Mock OTA upload — mirrors the firmware's gating in ota.cpp.
+
+        Drains the body so the browser's upload-progress bar runs for real,
+        then refuses unless the rig is idle, exactly as the device does.
+        """
+        length = int(self.headers.get("Content-Length", 0))
+        remaining = length
+        while remaining > 0:
+            chunk = self.rfile.read(min(65536, remaining))
+            if not chunk:
+                break  # EOF — without this, read() returning b"" spins forever
+            remaining -= len(chunk)
+        with LOCK:
+            fsm = STATE["fsm"]["state"]
+        log(f"POST /api/update ({length} bytes, fsm={fsm})")
+        if fsm != "IDLE":
+            self._send(
+                500,
+                json.dumps({"ok": False, "error": f"FSM is {fsm}, must be IDLE"}).encode(),
+                "application/json",
+            )
+        else:
+            self._send(
+                200, json.dumps({"ok": True, "bytes": length}).encode(), "application/json"
+            )
 
 
 def main() -> None:

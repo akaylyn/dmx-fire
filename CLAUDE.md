@@ -9,11 +9,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 arduino-cli compile --fqbn m5stack:esp32:m5stack_atoms3 Test_Button_DMX
 ```
 
-**Upload to device (flash):**
+**Upload to device — OTA over WiFi (preferred):**
+```bash
+scripts/ota.sh             # compile + push over WiFi in seconds
+scripts/ota.sh --no-compile
+```
+Requires the workstation to be on the device's WiFi AP. The device refuses the
+upload unless the FSM is IDLE and no purge/morse is running, and drives every
+valve closed first — an upload stops the DMX loop, and fixtures hold their last
+value when the signal stops. See `docs/spec-ota-update.md`.
+
+**Upload to device — USB (recovery path):**
 ```bash
 scripts/flash.sh
-scripts/flash.sh --erase   # full wipe, use if device is in a boot loop
+scripts/flash.sh --erase    # full wipe, use if device is in a boot loop
+scripts/flash.sh --legacy   # pre-optimisation reset strategy (slow, known-good)
 ```
+Needed for a bricked device, a device with no working WiFi, or any bootloader /
+partition-table change (OTA cannot touch those).
 
 > **Never run two flash instances at the same time.** Running a second flash while one is in progress — or killing a running flash with `pkill` and immediately starting another — corrupts the bootloader and forces a manual recovery. Wait for the current flash to finish or abort it cleanly with CTRL-C before starting a new one.
 

@@ -1,6 +1,116 @@
 # Field Debugging Notes — DMX Noise / Spurious Solenoid Firing
 
-_Session dates: 2026-07-17 → 2026-07-20, continued 2026-07-29 and 2026-08-04. Captured from the live field-debug conversations._
+_Session dates: 2026-07-17 → 2026-07-20, continued 2026-07-29, 2026-08-04 and 2026-08-19. Captured from the live field-debug conversations._
+
+---
+
+## Session 4 (2026-08-19) — Audio-reactive feature built and bench-tested on hardware
+
+Not a DMX-noise session. Built the audio-reactive feature end to end and got it onto the
+device. **Propane stayed off the whole session** — every assertion reads the DMX shadow
+buffer over HTTP, so valve *commands* were verified without gas.
+
+### Headline
+
+**83 / 85 tests passing on hardware, and the suite caught four real firmware bugs plus one
+regression I introduced while fixing one of them.** All 49 pre-existing tests pass — this is
+the **first hardware validation of the fire-uplight and rapid-retrigger work**, which had
+never run against a device.
+
+### What was built
+
+| Piece | Where |
+|---|---|
+| Spec | `docs/spec-audio-reactive.md` |
+| Plan (with latency research) | `docs/plan-audio-reactive.md` |
+| UDP receiver, limiter, predictor, 4 modes | `Test_Button_DMX/audio.h` / `audio.cpp` |
+| Host packet encoder + fake Echo | `tools/audio-sim/audio_packet.py`, `send_features.py` |
+| Test suite (36 new) | `tests/test_audio.py`, `tests/audio_sender.py` |
+| Audio web tab | `web.cpp` + `tools/web-preview/index.html` |
+
+The Echo itself is **not built** — that is phase 8. A laptop running
+`send_features.py --pattern music --bpm 128` is the audio source, and that is enough to
+drive lights and propane. Everything below was tested that way.
+
+### ⚠ The four real bugs the suite found
+
+Every one of these was found by a test, not by reading the code.
+
+1. **Mode change mid-burn left the valve open.** Switching out of an audio mode while firing
+   injected a release, but `modeClosesOnRelease(0)` is false for FIREBALL, so the FSM ignored
+   it and held the valve for the rest of `fireDurationMs` — **10 s in the test**. Fixed with
+   `fsmEndFireNow()`, which can only ever close.
+2. **The burst ceiling did not hold — measured 4.46 s against a 3.0 s cap.** `minGapMs` is
+   measured from shot *start*, so with a 3000 ms shot and a 100 ms gap the requirement was
+   already satisfied when the shot ended. Mode 4 re-requested instantly, the valve reopened
+   inside one DMX frame, and consecutive shots **merged into one continuous burn**. Fixed
+   with `AUDIO_MIN_OFF_MS = 100` — a separate OFF-time floor measured from shot *end*.
+3. **Prediction bypassed `beatMin` entirely.** The reactive path checked beat strength; the
+   predicted path never did. Once a grid locked, any predicted beat fired regardless.
+4. **Arming inherited a stale beat grid.** `staleMs` is 500 ms and the setup HTTP calls
+   complete in ~150 ms, so arming picked up a grid locked moments earlier — different mode,
+   different thresholds, possibly a different track — and the predictor could fire on it
+   before evaluating a single new packet. `audioArm()` now clears grid, predictor and latches.
+
+> **My own regression, caught within one run:** fixing #3 I gated the predictor on
+> `g_features.beatStrength`, which tracks the *newest packet* — and non-beat packets carry 0.
+> The predictor fires *between* beats, so it saw 0 nearly always and fired almost never
+> (1 shot in 5 s). Now gated on `g_lastBeatStrength`, the last actual beat.
+
+### ⚠ Two shop gotchas that cost real time
+
+**A stale `monitor.sh` from 13 days earlier was still holding the serial port.** Two readers
+on the USB-JTAG interface. It is almost certainly why four blocks needed retries during the
+first flash, and it silently broke every serial capture.
+
+> **Before blaming the cable or Bluetooth, run `lsof /dev/cu.usbmodem*`.** More than one
+> holder means fix that first.
+
+**macOS will not auto-rejoin the device AP after a reboot.** It deprioritizes a network with
+no internet route, so every flash strands the test run and the laptop must be reconnected by
+hand. Not fixable from our side; just budget for it.
+
+### Upload path — no-reset strategy VERIFIED on hardware
+
+`flash.sh`'s no-reset block strategy was marked *untested* in CLAUDE.md. It works:
+
+- 18 blocks, all hash-verified, **~0.5 s each at ~1.05–1.2 Mbit/s** — roughly **9 s of
+  transfer against the 461 s baseline**
+- 4 blocks reported `attempt 1 failed` and succeeded on retry, so the **per-block retry is
+  load-bearing, not belt-and-braces** (and see the stale-monitor note above)
+
+**`flash.sh` no longer guesses the port.** With more than one `cu.usbmodem*` attached it
+errors and lists them; override with `DMXFIRE_PORT=`. The chosen port is now pinned for the
+whole run, so the mid-flash re-detects cannot land on a different board. This matters the
+moment a second ESP32 is on the bench — flashing the wrong firmware onto the board wired to
+the solenoids is not a recoverable mistake.
+
+### Test-harness change worth knowing about
+
+`tests/api.py` now talks to the device over **urllib3 rather than requests**, and binds the
+source address. On a multi-homed laptop (device AP *plus* a network holding the default
+route) macOS scopes the route to the AP interface, and unbound `requests` calls time out
+while raw sockets and urllib3 both succeed from the same process at the same moment.
+
+> **Caveat, recorded honestly:** that measurement was taken while the WiFi link was flapping,
+> so I am not fully confident `requests` was at fault rather than the network. The urllib3
+> transport works and is no worse, but it is a candidate for reverting once the link is
+> stable for a full run.
+
+### Confluence is marked disconnected in NVS
+
+Boot diagnostics report `[FAIL] Confluence marked disconnected — solenoid will not fire`.
+Pre-existing, not from this work. Tests are unaffected (the baseline fixture sets it true),
+but **manual** firing will leave CH1 at 0 and only the four tower valves respond.
+
+### Still open
+
+- **`audlead` is a guess (120 ms) and must be measured.** Film one shot at ≥120 fps with the
+  status LED in frame and count frames to visible flame. Until then, beat sync is uncalibrated.
+- Echo firmware (phase 8), blocked on the M5Unified **0.2.4 sketchbook vs 0.2.13 repo** split,
+  which needs its own commit.
+- OTA still unproven end to end; USB remains the working path.
+- Nothing has been fired with gas. Steps 1–4 of the shop sequence were gas-off only.
 
 ---
 

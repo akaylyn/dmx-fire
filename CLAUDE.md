@@ -46,7 +46,11 @@ partition-table change (OTA cannot touch those).
 
 The old rationale here — an "ESP32-S3 rev 0.2 64 KB block-erase errata" — was wrong. No such errata is documented by Espressif, and the upstream bug it cited (esptool #832) was filed against esptool 4.4 and is closed; the toolchain ships 5.1.0. What Espressif *does* document is that an application which reconfigures or disables the USB peripheral makes the device disappear — and this firmware starts a WiFi AP, DMX and FastLED milliseconds after boot. The old loop reset into that app between **every** block.
 
-So `flash.sh` now holds the chip in download mode for the whole run (`--before no-reset --after no-reset`, `watchdog-reset` only on the last block) and drops the 3 s inter-block sleeps. Measured before the change: 461 s wall clock for **8.8 s** of actual data transfer — about 2% efficiency. **Untested on hardware**; `--legacy` restores the previous behaviour. Full detail in `docs/spec-upload.md`.
+So `flash.sh` now holds the chip in download mode for the whole run (`--before no-reset --after no-reset`, `watchdog-reset` only on the last block) and drops the 3 s inter-block sleeps. Measured before the change: 461 s wall clock for **8.8 s** of actual data transfer — about 2% efficiency.
+
+**Verified on hardware 2026-08-19.** All 18 blocks wrote and hash-verified, each in ~0.5 s at ~1.05–1.2 Mbit/s — roughly 9 s of transfer against the 461 s baseline. Four blocks reported `attempt 1 failed` (`Serial data stream stopped` / `device reports readiness to read but returned no data`) and succeeded on retry, so the USB-JTAG path is still intermittently flaky and the **per-block retry is load-bearing, not belt-and-braces**. `--legacy` still restores the previous behaviour. Full detail in `docs/spec-upload.md`.
+
+**Port selection refuses to guess.** With more than one `cu.usbmodem*` device attached, `flash.sh` errors and lists them rather than taking the first — flashing the wrong firmware onto the board wired to the propane solenoids is not a recoverable mistake. Override with `DMXFIRE_PORT=/dev/cu.usbmodemXXXX`. The chosen port is pinned for the whole run, so the mid-flash re-detects after a USB reset cannot land on a different board.
 
 **Browser-based flash recovery (automatic failover):** When any 64 KB block fails after `scripts/flash.sh`'s 12 retries, the script now auto-launches a browser recovery tool. If the internet is reachable it opens https://espressif.github.io/esptool-js/; otherwise it serves a local copy from `tools/recovery/` at `http://localhost:8765/` via `python3 -m http.server`. The terminal prints the four `.bin` paths and offsets the operator should drop into the browser UI, along with the button-hold ROM-bootloader steps. The browser flow uses Web Serial (Chrome/Edge), which often succeeds when the CLI's macOS USB path is wedged. After a successful browser flash, no further CLI run is needed; for a partial recovery (e.g. erase only) re-run `scripts/flash.sh`. See `docs/spec-flash-recovery-failover.md` for details.
 
@@ -86,7 +90,7 @@ python3 -m venv .venv && source .venv/bin/activate && pip install -r tests/requi
 
 ## Architecture
 
-This is an Arduino sketch (`Test_Button_DMX/`) running on an M5AtomS3 Lite (ESP32-S3). It controls DMX512 lighting on 4 towers and a propane solenoid (Confluence) over a 64-channel universe at 50 Hz, with a web config UI served from the device's WiFi AP at `192.168.4.1`.
+This is an Arduino sketch (`Test_Button_DMX/`) running on an M5AtomS3 Lite (ESP32-S3). It controls DMX512 lighting on 4 towers and a propane solenoid (Confluence) over a 64-channel universe at 20 Hz (`DMX_FRAME_INTERVAL_MS = 50` in `dmx.h` — a 50 ms period, deliberately slow as a flicker fix), with a web config UI served from the device's WiFi AP at `192.168.4.1`.
 
 ### DMX Universe Layout
 

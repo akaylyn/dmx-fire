@@ -114,6 +114,135 @@ but **manual** firing will leave CH1 at 0 and only the four tower valves respond
 
 ---
 
+## ⚠⚠ SESSION 5 (2026-08-19) — "Tower 1 is dead" was a TEST FIXTURE, not hardware
+
+**Read this before diagnosing any dead fixture again.** Tower 1's accumulator decoder was
+reported dead — strips unlit, solenoid silent — while its uplight worked and towers 0/2/3 were
+fine. A manual DMX console drove the decoder perfectly. The decoder had already been
+**physically replaced**, and the cable had **passed a pin-by-pin cable tester**.
+
+### What it actually was
+
+`towerConfigs[1].connected == false`, persisted in NVS.
+
+[Test_Button_DMX.ino:209](Test_Button_DMX/Test_Button_DMX.ino#L209) —
+`if (!towerConfigs[i].connected) continue;` — skips `towerWrite()` for that tower entirely, so
+**CH20–27 are never written and sit at zero forever.** Ticking Connected in the web UI and
+pressing **Save** restored it instantly; CH20–27 started animating on the sniffer that second.
+
+### The measurement that found it
+
+Enttec RX monitor (`tools/dmx-tester/index.html`) tapped in right after the M5, 20 samples over
+8 s with themes running:
+
+| Tower | decoder strips | uplight |
+|---|---|---|
+| 0 | CH5/6/7 = 9/9/3 | CH9/10/11 = 12/12/4 |
+| **1** | CH20/21/22 = **0/0/0** | CH24/25/26 = **0/0/0** |
+| 2 | CH35/36/37 = 24/42/21 | CH39/40/41 = 32/56/28 |
+| 3 | CH50/51/52 = 54/55/58 | CH54/55/56 = 73/74/78 |
+
+Tower 1 zero in *every* sample while its neighbours carried live data **in the same frames**.
+That rules out cable, connector, termination, ground reference, drive strength and the decoder
+in one shot — a transmitter that never sends the bytes cannot be an electrical fault.
+
+### Where the flag came from
+
+Device config was a **byte-for-byte match for the write set of
+[tests/test_storage.py](tests/test_storage.py)** — towers `fire/11/120/22`, `blue/33/80/44`,
+`green/55/200/66`, `blue/77/300/88`, confluence `connected=False, fireLevel=99`, button
+`mode 1 / 1500 / 3000`. That test deliberately writes `connected=False` to tower 1 and the
+Confluence to prove distinct values round-trip, and it sorts **last** in the suite.
+
+`conftest.py`'s `baseline` fixture reset config *before* each test but **never after**, so the
+last test's writes went to NVS and outlived the run — surviving reboots, looking exactly like a
+dead decoder. **Fixed:** `_apply_baseline_config()` now runs in the fixture teardown as well as
+setup, so a run can no longer leave a fixture disconnected.
+
+> **Caveat on causality.** The operator recalls only running the API suite *recently*, while
+> Tower 1 had been misbehaving since Session 2 (2026-07-29). So this almost certainly does
+> **not** explain the original flicker — that was the electrical fault of Sessions 2–3. What is
+> established by direct measurement is narrower and still decisive: on 2026-08-19 the flag was
+> `false`, the M5 was sending zeros to that tower because of it, and clearing the flag brought
+> the tower back. A test run during the debugging almost certainly introduced a *second*,
+> independent failure on top of the first, and it is the one that made the tower look dead.
+
+> **The Confluence was disabled the same way** (`connected=false` →
+> [.ino:252](Test_Button_DMX/Test_Button_DMX.ino#L252) skips `confluenceWrite()`, central
+> solenoid never fires), and kept the test's `fireLevel=99` after the towers were restored.
+
+### Why it hid for so long
+
+- The failure is **silent** in normal operation — the `[DMX]` serial log prints only CH1–5 and
+  only on FSM transitions. The boot diagnostic *does* catch it
+  ([tests.cpp:44](Test_Button_DMX/tests.cpp#L44) `FAIL("Tower N is marked disconnected")`) but
+  only on the serial console, and nobody was watching it.
+- **The web UI lied.** Config forms were server-rendered once at page load, so the checkbox
+  could show Connected while NVS said otherwise — and since the form posts every field, saving
+  a stale form writes the stale values back. **Fixed this session:** the Towers and Confluence
+  forms now poll `/api/state`, sync themselves from the device, pause syncing while you are
+  editing, and print the live on-air bytes with a loud banner when a fixture is skipped.
+- Every symptom was a **perfect forgery of an electrical fault**, and this rig has a real,
+  documented electrical history (Sessions 2–3), so the priors pointed the wrong way.
+- The manual-console test "proving" the decoder good was really proving that *the console sends
+  bytes on CH20–23 and the M5 does not.*
+
+### Also corrected this session
+
+**`flameLevel` / `fireLevel` are not proportional flame controls.** The solenoid is an on/off
+valve; the byte only has to clear the decoder's turn-on threshold to energise the coil. Low
+values leave it shut or chatter it. Flame *size* is gas pressure and orifice, not DMX. The
+"0=off, 255=full open" comment in `towers.h` said otherwise and has been rewritten.
+
+**A fire duration below one DMX frame cannot light.** The bus runs at 20 Hz, so
+`fireDurationMs < 50` can only ever reach the wire as a single 50 ms frame — the rig was found
+on `fireDurationMs=10`. The UI now warns on this.
+
+**The Confluence kept the test's `fireLevel=99`** even after the four towers were restored to
+255, so the central solenoid stayed weak once it was re-enabled. Worth checking separately from
+the towers: they are restored by different forms.
+
+### New tooling
+
+`scripts/towers.sh` — prints every tower's persisted config beside the live DMX bytes for its
+decoder and uplight blocks, and **flags any setting that blanks a fixture**
+(`connected=false`, `brightness=0`, `flameLevel=0`, disconnected Confluence). Run it **first**,
+before touching a cable. It is what found this in about ten seconds.
+
+**Live fixture state in the web UI** — the config forms were server-rendered once at page load
+and never refreshed, so the page could show *Connected* ticked while NVS said otherwise, and
+saving a stale form wrote the stale values back. They now poll `/api/state`, hydrate from the
+device, pause while you are editing, print the live on-air bytes, and raise a loud banner for
+every silent failure (disconnected, `brightness=0`, `flameLevel=0`, sub-frame fire duration).
+[docs/spec-live-fixture-state.md](docs/spec-live-fixture-state.md).
+
+**DMX quiet mode / bus handover** — `POST /api/dmx/quiet/start|stop` and a control in the Tower
+Configs tab stop the transmitter so a manual console or the Enttec can drive the bus without
+unplugging the M5 (DMX has no arbitration; two transmitters garble each other). Reuses OTA's
+safety helpers — refuses unless the rig is idle, and drives every valve shut **on the wire**
+before going silent, because fixtures latch their last commanded value when frames stop.
+Global by necessity: a frame carries all 64 slots, so there is no per-tower quiet.
+RAM-only and never persisted — a saved "stop transmitting" flag would be the same trap as a
+saved `connected=false`. [docs/spec-dmx-quiet-mode.md](docs/spec-dmx-quiet-mode.md).
+
+**Valve-channel logging** — the `[DMX]` line printed slots 1–5 with RGB labels left over from an
+older channel map, so it was blind to the tower valves and to purge. It now prints
+CH1/8/23/38/53 plus the frame counters — which turned out never to have been declared in
+`dmx.h`, despite a comment in `dmx.cpp` claiming they were exposed for exactly this.
+
+### Standing rule
+
+> **Before diagnosing a dead fixture as hardware, confirm the controller is actually sending
+> bytes to it.** `scripts/towers.sh`, or the RX monitor at the head of the chain. Sessions 2–5
+> collectively burned a decoder, a cable test and several field days on faults that a
+> thirty-second transmit check would have separated immediately.
+
+Nothing here overturns Session 3's ground-reference root cause — that was a genuine, separate,
+electrical fault with its own evidence. This is a second, independent failure mode layered on
+top of it that mimicked it.
+
+---
+
 ## ⚠ START HERE — device state as of 2026-07-29
 
 **ROOT CAUSE FOUND (Session 3, 2026-08-04) — see the Session 3 write-up below.** The whole

@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
 from api import Client
+
+# The canonical packet encoder lives with the simulator, not in tests/. Importing it
+# rather than copying it is deliberate: a second implementation would drift from the
+# firmware struct silently, and the first symptom would be a test that passes while
+# the device rejects every packet.
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "tools", "audio-sim")
+)
 
 DEFAULT_HOST = "http://192.168.4.1"
 
@@ -40,12 +50,32 @@ def baseline(device: Client):
         mode=0, fireDurationMs=500, cooldownMs=2000, endCuePattern=0, endCueMs=1000
     )
     device.set_fire_uplight(r=255, g=110, b=0, w=0)
+    # Audio starts disarmed and with a short duty window, so budget tests converge in
+    # seconds rather than tens of seconds. Everything else stays at firmware defaults.
+    device.audio_disarm()
+    device.set_audio(
+        audDutyPct=25,
+        audDutyWinMs=4000,
+        audMinGapMs=250,
+        audShotMs=150,
+        audMaxOpenMs=600,
+        audLeadMs=0,
+        audStaleMs=500,
+        audBassOn=170,
+        audBassOff=140,
+        audBeatMin=90,
+        audDropGapMs=1000,
+        audDropShotMs=300,
+        audLightMode=1,
+        audLightDepth=150,
+    )
     device.set_confluence(connected=True, fireLevel=255)
     for i in range(4):
         device.set_tower(i, connected=True, theme="green", brightness=128, speed=100, flameLevel=255)
     yield
     # Best-effort cleanup so a failing test doesn't leave the rig in FIRE_ACTIVE.
     try:
+        device.audio_disarm()
         device.release()
         device.reset()
     except Exception:

@@ -37,6 +37,30 @@ def device() -> Client:
     return client
 
 
+# Fixture config the rig is left in, applied both BEFORE and AFTER every test.
+#
+# The teardown half is load-bearing, not tidiness. test_storage.py deliberately writes
+# connected=False to tower 1 and to the Confluence to prove distinct values round-trip,
+# and it sorts last in the suite. Every config write lands in NVS (storage.cpp), so
+# without this restore those two flags outlive the test run and survive reboots.
+#
+# A disconnected tower is silently skipped in the frame loop (Test_Button_DMX.ino:209
+# — `if (!towerConfigs[i].connected) continue;`), so its channels are never written and
+# sit at zero forever. On the wire that is indistinguishable from a dead decoder or a
+# broken cable, and it cost a field session chasing exactly that: tower 1's accumulator
+# was declared faulty and physically replaced before anyone checked the flag.
+def _apply_baseline_config(device: Client) -> None:
+    # Quiet mode is RAM-only so a reboot clears it, but a test that muted the
+    # transmitter and died would leave the whole rig dark for the rest of the
+    # session. Same failure shape as connected=false, so it gets the same restore.
+    device.dmx_quiet_stop()
+    device.set_confluence(connected=True, fireLevel=255)
+    for i in range(4):
+        device.set_tower(
+            i, connected=True, theme="green", brightness=128, speed=100, flameLevel=255
+        )
+
+
 @pytest.fixture(autouse=True)
 def baseline(device: Client):
     """Reset FSM and apply a known config before each test.
@@ -69,14 +93,14 @@ def baseline(device: Client):
         audLightMode=1,
         audLightDepth=150,
     )
-    device.set_confluence(connected=True, fireLevel=255)
-    for i in range(4):
-        device.set_tower(i, connected=True, theme="green", brightness=128, speed=100, flameLevel=255)
+    _apply_baseline_config(device)
     yield
-    # Best-effort cleanup so a failing test doesn't leave the rig in FIRE_ACTIVE.
+    # Best-effort cleanup so a failing test doesn't leave the rig in FIRE_ACTIVE —
+    # or, just as bad, with a fixture marked disconnected. See _apply_baseline_config.
     try:
         device.audio_disarm()
         device.release()
         device.reset()
+        _apply_baseline_config(device)
     except Exception:
         pass

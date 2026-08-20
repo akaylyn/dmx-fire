@@ -167,6 +167,24 @@ class Client:
     def purge_stop(self) -> None:
         self._post("/api/purge/stop")
 
+    # ---- DMX transmitter quiet mode ----
+
+    def dmx_quiet_start(self) -> _Resp:
+        """POST /api/dmx/quiet/start, returning the response WITHOUT raising.
+
+        The 409 refusal (rig not idle) is a tested path, not an error — stopping
+        frames while a valve could be open is the thing the guard exists to prevent.
+        """
+        r = self._pool.request(
+            "POST", f"{self.host}/api/dmx/quiet/start",
+            fields={}, encode_multipart=False,
+            timeout=urllib3.Timeout(total=self.timeout),
+        )
+        return _Resp(r)
+
+    def dmx_quiet_stop(self) -> None:
+        self._post("/api/dmx/quiet/stop")
+
     # ---- audio ----
 
     def audio_arm(self) -> None:

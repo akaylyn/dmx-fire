@@ -66,7 +66,12 @@ done
 BLOCK_SIZE="${DMXFIRE_BLOCK_SIZE:-65536}"
 
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
-FQBN="m5stack:esp32:m5stack_atoms3"
+# Target board. Override to flash a bench target — e.g.
+#   DMXFIRE_FQBN=m5stack:esp32:m5stack_cores3 scripts/flash.sh
+# See docs/spec-upload-targets.md.
+FQBN="${DMXFIRE_FQBN:-m5stack:esp32:m5stack_atoms3}"
+# arduino-cli's build dir is the FQBN with ':' replaced by '.'
+FQBN_DIR="${FQBN//:/.}"
 SKETCH="$REPO/Test_Button_DMX"
 LOCKFILE="$REPO/tests/visual/runs/.flash.lock"
 mkdir -p "$(dirname "$LOCKFILE")"
@@ -95,10 +100,50 @@ done_banner() {
   echo
 }
 
-find_port() { find /dev -maxdepth 1 -name 'cu.usbmodem*' 2>/dev/null | head -1; }
+list_ports() { find /dev -maxdepth 1 -name 'cu.usbmodem*' 2>/dev/null | sort; }
+port_count() { list_ports | grep -c . ; }
+
+# Pick the serial port, REFUSING to guess when more than one board is attached.
+#
+# This used to be `... | head -1`. That was safe only while exactly one device
+# was ever plugged in. Once a second ESP32-S3 is on the bench — an audio node, a
+# CoreS3 bench target — both enumerate as cu.usbmodem*, the order is not stable,
+# and head -1 silently picks one. Flashing controller firmware onto the wrong
+# board is merely annoying; flashing the wrong firmware onto the board wired to
+# the propane solenoids is not. Ambiguity is now a hard error.
+#
+# Override with DMXFIRE_PORT=/dev/cu.usbmodemXXXX when several are connected.
+find_port() {
+  if [ -n "${DMXFIRE_PORT:-}" ]; then
+    if [ ! -e "$DMXFIRE_PORT" ]; then
+      red "ERROR: DMXFIRE_PORT=$DMXFIRE_PORT does not exist" >&2
+      return 1
+    fi
+    printf '%s\n' "$DMXFIRE_PORT"
+    return 0
+  fi
+
+  local n
+  n=$(port_count)
+  if [ "$n" -eq 0 ]; then return 1; fi
+  if [ "$n" -eq 1 ]; then list_ports; return 0; fi
+
+  red "ERROR: $n serial devices found — refusing to guess which one to flash." >&2
+  echo >&2
+  list_ports | while read -r p; do echo "    $p" >&2; done
+  echo >&2
+  yellow "Unplug the others, or name the target explicitly:" >&2
+  echo "    DMXFIRE_PORT=$(list_ports | head -1) $0 $*" >&2
+  echo >&2
+  yellow "If one of these is the fire controller, be certain before you pick." >&2
+  return 1
+}
+
 wait_for_port() {
   local timeout=30 elapsed=0
-  while [ -z "$(find_port)" ] && [ $elapsed -lt $timeout ]; do
+  # Wait only on "nothing attached yet". Multiple devices is a decision for the
+  # operator, not something that resolves by waiting.
+  while [ "$(port_count)" -eq 0 ] && [ $elapsed -lt $timeout ]; do
     sleep 1; elapsed=$((elapsed+1))
   done
   find_port
@@ -188,7 +233,7 @@ exec > >(tee "$FLASH_LOG") 2>&1
 echo "==> logging to $FLASH_LOG"
 echo "==> progress bar: scripts/flash-progress.sh   (no arguments needed)"
 
-BUILD="$SKETCH/build/m5stack.esp32.m5stack_atoms3"
+BUILD="$SKETCH/build/$FQBN_DIR"
 BIN_BOOT="$BUILD/Test_Button_DMX.ino.bootloader.bin"
 BIN_PART="$BUILD/Test_Button_DMX.ino.partitions.bin"
 BIN_APP="$BUILD/Test_Button_DMX.ino.bin"
@@ -213,11 +258,39 @@ fi
 
 [ -f "$BIN_APP" ] || { red "ERROR: $BIN_APP missing — compile must have failed"; exit 6; }
 
-PORT=$(wait_for_port)
+PORT=$(wait_for_port) || exit 1
 if [ -z "$PORT" ]; then
   red "ERROR: no /dev/cu.usbmodem* device found — is the device plugged in?"
   exit 1
 fi
+
+# Pin the target for the rest of the run. The device drops off the bus and comes
+# back across USB resets, so the loops below re-wait for it — but they must wait
+# for THIS device, not re-run the picker and possibly land on a different board
+# halfway through writing flash.
+SELECTED_PORT="$PORT"
+echo "==> target: $SELECTED_PORT"
+
+# Wait for the pinned port to re-enumerate after a reset. Falls back to the sole
+# remaining port if the path changed (macOS usually keeps it stable, but a hub
+# re-enumeration can shift it) — and only ever when exactly one device is present,
+# so this can never silently jump to a second board.
+wait_for_selected_port() {
+  local timeout="${1:-10}" elapsed=0
+  while [ $elapsed -lt $timeout ]; do
+    if [ -e "$SELECTED_PORT" ]; then printf '%s\n' "$SELECTED_PORT"; return 0; fi
+    if [ "$(port_count)" -eq 1 ]; then
+      local only; only=$(list_ports)
+      if [ "$only" != "$SELECTED_PORT" ]; then
+        yellow "==> port moved: $SELECTED_PORT -> $only" >&2
+        SELECTED_PORT="$only"
+      fi
+      printf '%s\n' "$SELECTED_PORT"; return 0
+    fi
+    sleep 1; elapsed=$((elapsed+1))
+  done
+  return 1
+}
 
 # Helper: run one esptool write-flash call, retry up to MAX_ATTEMPTS times.
 # Succeeds when output contains "Hash of data verified" (teardown errors are
@@ -238,10 +311,9 @@ do_flash() {
   local before="$1" after="$2"; shift 2
   local attempt=0
   while [ $attempt -lt $MAX_ATTEMPTS ]; do
-    PORT=$(find /dev -maxdepth 1 -name 'cu.usbmodem*' 2>/dev/null | head -1)
-    if [ -z "$PORT" ]; then
+    PORT=$(wait_for_selected_port 2) || {
       sleep 2; attempt=$((attempt+1)); continue
-    fi
+    }
     local eff_before="$before"
     if [ $attempt -ge 2 ] && [ "$before" = "no-reset" ]; then
       eff_before="usb-reset"   # assume we fell out of download mode
@@ -279,8 +351,7 @@ if [ $ERASE -eq 1 ]; then
   yellow "==> clearing NVS at $NVS_OFFSET ($NVS_SIZE bytes) — config will reset to defaults"
   erase_attempt=0
   while [ $erase_attempt -lt 5 ]; do
-    PORT=$(find /dev -maxdepth 1 -name 'cu.usbmodem*' 2>/dev/null | head -1)
-    if [ -z "$PORT" ]; then sleep 2; erase_attempt=$((erase_attempt+1)); continue; fi
+    PORT=$(wait_for_selected_port 2) || { sleep 2; erase_attempt=$((erase_attempt+1)); continue; }
     OUT=$("$ESPTOOL" --chip esp32s3 -p "$PORT" -b 115200 \
       --before usb-reset --after watchdog-reset --connect-attempts 10 \
       erase_region $NVS_OFFSET $NVS_SIZE 2>&1) && { echo "$OUT"; break; }

@@ -27,7 +27,12 @@ struct TowerConfig {
   String    themeName;   // "green","blue","fire","simon","rainbow","warm_white","bright_white","candle"
   uint8_t   bright;      // idle brightness 0–255
   uint16_t  speed;       // theme speed % (10..400, 100 = normal)
-  uint8_t   flameLevel;  // 0=off, 255=full open; written to decoder CH4 during fire
+  // Byte written to the decoder's CH4 during fire. NOT a proportional flame
+  // control: the solenoid is an on/off valve, so this only has to clear the
+  // decoder's turn-on threshold to energise the coil. Values well under that
+  // threshold leave the valve shut or chatter it. Flame size is set by gas
+  // pressure and orifice, not by DMX.
+  uint8_t   flameLevel;  // 0 = never open; 255 = unambiguously on
 };
 
 extern TowerConfig towerConfigs[NUM_TOWERS];

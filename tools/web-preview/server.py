@@ -201,6 +201,36 @@ def update_config(target: str, args: dict[str, str]) -> None:
             STATE["towers"][idx]["flameLevel"] = int(args.get("flameLevel", 255))
 
 
+def build_dmx_frame() -> list[int]:
+    """Approximate what towerWrite()/confluenceWrite() put on the wire.
+
+    Not a theme renderer — it only needs to be faithful about which channels are
+    DRIVEN and which stay zero, because that is what the Towers tab's live readout
+    reports. In particular a tower with connected=false must come back all-zero:
+    Test_Button_DMX.ino:209 skips towerWrite() for it entirely, and reproducing that
+    here is what lets the preview exercise the disconnected-tower banner.
+    """
+    ch = [0] * 64
+    firing = STATE["fsm"]["state"] == "FIRE_ACTIVE"
+
+    conf = STATE["confluence"]
+    if conf["connected"]:
+        ch[0] = conf["fireLevel"] if firing else 0
+
+    for i, t in enumerate(STATE["towers"]):
+        if not t["connected"]:
+            continue                      # skipped in the frame loop — channels stay 0
+        base = 4 + i * 15                 # towers.cpp CHANNELS_PER_TOWER = 15
+        strip = t["brightness"] * 75 // 100   # STRIP_BRIGHTNESS_PCT
+        for k in range(3):
+            ch[base + k] = strip              # decoder R/G/B
+        ch[base + 3] = t["flameLevel"] if firing else 0   # decoder CH4 = valve
+        for k in range(3):
+            ch[base + 4 + k] = t["brightness"]            # uplight R/G/B
+        ch[base + 7] = 0                                  # uplight white
+    return ch
+
+
 def build_state_json() -> bytes:
     """JSON shape mimics handleApiState() in web.cpp — same field names."""
     # Synthetic 120 BPM source so the meters, beat blinker and budget bar move.
@@ -236,11 +266,11 @@ def build_state_json() -> bytes:
         "confluence": STATE["confluence"],
         "towers": STATE["towers"],
         "morse": STATE["morse"],
-        # DMX shadow buffer placeholder (64 zero-filled channels). Real device
-        # fills these from dmxLastFrame[] — for UI verification, zeroes are fine.
         # Inserted before dmx, matching handleApiState()'s ordering in web.cpp.
         "audio": STATE["audio"],
-        "dmx": {"ch": [0] * 64},
+        # `quiet` pairs with `ch`: the firmware keeps composing frames while muted,
+        # so `ch` is "what would be sent", not what is on the wire.
+        "dmx": {"quiet": STATE.get("dmxQuiet", False), "ch": build_dmx_frame()},
     }
     return json.dumps(payload).encode("utf-8")
 
@@ -411,6 +441,36 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 STATE["purge"] = True
             self._send(200)
+        elif self.path == "/api/dmx/quiet/start":
+            # Mirrors handleApiDmxQuietStart(): refuse unless the rig is idle, since
+            # stopping frames makes every fixture latch its last commanded value.
+            fsm = STATE["fsm"]["state"]
+            if fsm != "IDLE":
+                log(f"POST /api/dmx/quiet/start REFUSED (FSM {fsm})")
+                self._send(
+                    409,
+                    json.dumps({"ok": False, "error": f"FSM is {fsm}, must be IDLE"}).encode(),
+                    "application/json",
+                )
+            elif STATE["morse"]["playing"]:
+                log("POST /api/dmx/quiet/start REFUSED (morse playing)")
+                self._send(
+                    409,
+                    json.dumps({"ok": False, "error": "morse is playing"}).encode(),
+                    "application/json",
+                )
+            else:
+                log("POST /api/dmx/quiet/start")
+                with LOCK:
+                    STATE["dmxQuiet"] = True
+                self._send(200, json.dumps({"ok": True, "quiet": True}).encode(),
+                           "application/json")
+        elif self.path == "/api/dmx/quiet/stop":
+            log("POST /api/dmx/quiet/stop")
+            with LOCK:
+                STATE["dmxQuiet"] = False
+            self._send(200, json.dumps({"ok": True, "quiet": False}).encode(),
+                       "application/json")
         elif self.path == "/api/purge/stop":
             log("POST /api/purge/stop")
             with LOCK:

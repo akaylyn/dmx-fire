@@ -500,6 +500,17 @@
       border-left: 3px solid var(--accent);
       border-radius: 4px;
     }
+
+    /* Live device readout under each fixture's address line. The config forms are
+       rendered once at page load, so without this the page silently lies whenever
+       anything else changes the config — a test run, the API, another phone on the
+       AP. See notes.md Session 5. */
+    .live{font:12px/1.5 ui-monospace,Menlo,monospace;background:#0d0f14;border:1px solid var(--line);
+          border-radius:8px;padding:8px 10px;margin:0 0 12px;color:var(--muted);white-space:pre-wrap}
+    .live.bad{border-color:#b3402f;color:#ffb4a6;background:#1d0f0d}
+    .live .warn{color:#ff8a73;font-weight:600}
+    .live .ok{color:#6fd08c}
+    .live .stale{color:#e8c46a}
     .dmx-addr code {
       background: var(--bg);
       padding: 2px 6px;
@@ -649,6 +660,7 @@
       <fieldset>
         <legend>Propane Solenoid</legend>
         <p class='dmx-addr'>Central solenoid driver: <code>A001</code>, 3-channel mode (CH&nbsp;1 = central valve). Each tower's accumulator valve also opens via its own decoder CH&nbsp;4 during fire.</p>
+        <div class='live' data-live='cf'>reading device…</div>
         <form method='POST' action='/set'>
           <input type='hidden' name='target' value='confluence'>
           <div class='cr'>
@@ -667,6 +679,23 @@
     <!-- ===== TOWERS ===== -->
     <section class='tab' data-tab='towers' role='tabpanel' hidden>
       <h2>Tower Configs</h2>
+
+      <fieldset>
+        <legend>Bus handover</legend>
+        <p class='dmx-addr'>Stop transmitting DMX so a <strong>manual console or the Enttec can
+        drive the fixtures</strong>. DMX has no arbitration &mdash; two transmitters on one pair
+        garble each other &mdash; so this is how you hand the bus over without unplugging the
+        controller. Every valve is driven shut and flushed to the wire before the transmitter
+        goes silent, and the rig must be idle to start. <strong>This is global:</strong> a frame
+        carries all 64 slots, so there is no per-tower quiet &mdash; untick <em>Connected</em>
+        to zero one tower's channels instead. Quiet mode is never saved; a power cycle always
+        restores normal output.</p>
+        <div class='live' data-live='bus'>reading device&hellip;</div>
+        <div class='row'>
+          <button type='button' id='quietBtn'>Go quiet &mdash; hand over the bus</button>
+          <button type='button' id='resumeBtn' hidden>Resume transmitting</button>
+        </div>
+      </fieldset>
 
       <div class='subtabs' id='towerSubtabs' role='tablist'>
         <button type='button' class='active' data-sub='all' role='tab'>All</button>
@@ -714,6 +743,7 @@
         <fieldset>
           <legend>Tower 0</legend>
           <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A005</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A009</code></p>
+          <div class='live' data-live='t0'>reading device…</div>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='0'>
             <div class='cr'>
@@ -751,6 +781,7 @@
         <fieldset>
           <legend>Tower 1</legend>
           <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A020</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A024</code></p>
+          <div class='live' data-live='t1'>reading device…</div>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='1'>
             <div class='cr'>
@@ -788,6 +819,7 @@
         <fieldset>
           <legend>Tower 2</legend>
           <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A035</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A039</code></p>
+          <div class='live' data-live='t2'>reading device…</div>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='2'>
             <div class='cr'>
@@ -825,6 +857,7 @@
         <fieldset>
           <legend>Tower 3</legend>
           <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A050</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A054</code></p>
+          <div class='live' data-live='t3'>reading device…</div>
           <form method='POST' action='/set'>
             <input type='hidden' name='target' value='3'>
             <div class='cr'>
@@ -1237,6 +1270,183 @@
           if (t && !t.hidden) refresh();
         }, 500);
         refresh();
+      })();
+    </script>
+    <script>
+      // ---- Live fixture state -------------------------------------------------
+      // The config forms are server-rendered ONCE at page load. Anything that changes
+      // config afterwards — the API, a pytest run, another phone on the AP — leaves the
+      // form showing stale values, and because the form posts EVERY field, saving a
+      // stale form writes the stale values straight back.
+      //
+      // This syncs each fixture form from /api/state, and prints what the device is
+      // really doing underneath it. A tower with connected=false is skipped entirely in
+      // the frame loop (Test_Button_DMX.ino:209) and its channels are never written —
+      // on the wire that is indistinguishable from a dead decoder. Session 4 in notes.md
+      // cost a replaced decoder and a field day to exactly that, so it gets a loud banner.
+      (function () {
+        var FRAME_MS = 50;               // dmx.h DMX_FRAME_INTERVAL_MS
+        var forms = {};                  // key -> form element
+        var lives = {};                  // key -> readout element
+
+        document.querySelectorAll('[data-live]').forEach(function (el) {
+          var key = el.getAttribute('data-live');
+          lives[key] = el;
+          var form = el.parentElement.querySelector("form[action='/set']");
+          if (!form) return;
+          forms[key] = form;
+          // Any edit marks the form dirty so polling stops overwriting it mid-keystroke.
+          form.addEventListener('input', function () { form.dataset.dirty = '1'; });
+          form.addEventListener('change', function () { form.dataset.dirty = '1'; });
+          form.addEventListener('submit', function () { delete form.dataset.dirty; });
+        });
+
+        function setField(form, name, value) {
+          var el = form.querySelector("[name='" + name + "']");
+          if (!el || el === document.activeElement) return;
+          if (el.type === 'checkbox') { el.checked = !!value; return; }
+          el.value = value;
+          // Range sliders mirror their value into the sibling <span class='val'>.
+          var sib = el.nextElementSibling;
+          if (sib && sib.classList && sib.classList.contains('val')) sib.textContent = value;
+        }
+
+        function bytes(ch, start, n) {
+          if (!ch || ch.length < start - 1 + n) return '?';
+          return ch.slice(start - 1, start - 1 + n).join('/');
+        }
+
+        function render(key, cfg, body, bad) {
+          var el = lives[key];
+          if (!el) return;
+          el.innerHTML = body;
+          el.classList.toggle('bad', !!bad);
+          var form = forms[key];
+          if (!form) return;
+          if (form.dataset.dirty) {
+            el.innerHTML += "\n<span class='stale'>Form has unsaved edits — not syncing from the device. " +
+                            "Save, or reload the page to discard.</span>";
+            return;
+          }
+          for (var k in cfg) setField(form, k, cfg[k]);
+        }
+
+        function tick(s) {
+          var ch = (s.dmx || {}).ch;
+          var btn = s.button || {};
+          var quiet = !!(s.dmx || {}).quiet;
+
+          // Bus-handover panel, and the buttons that drive it.
+          var qb = document.getElementById('quietBtn'), rb = document.getElementById('resumeBtn');
+          if (qb && rb) { qb.hidden = quiet; rb.hidden = !quiet; }
+          if (lives.bus) {
+            lives.bus.innerHTML = quiet
+              ? "<span class='warn'>TRANSMITTER QUIET — nothing is being sent. The bus is free " +
+                "for another controller. Fixtures are holding the all-zero frame that was " +
+                "flushed before going silent.</span>"
+              : "transmitting   " + FRAME_MS + " ms frames, 64 slots";
+            lives.bus.classList.toggle('bad', quiet);
+          }
+
+          (s.towers || []).forEach(function (t, i) {
+            var base = 4 + i * 15;                       // towers.cpp CHANNELS_PER_TOWER
+            var line;
+            if (!t.connected) {
+              line = "<span class='warn'>DISCONNECTED — this tower is skipped in the DMX " +
+                     "loop, so channels " + (base + 1) + "–" + (base + 8) + " are never " +
+                     "written and stay at 0. Tick Connected and press Save.</span>";
+            } else if (quiet) {
+              line = "<span class='stale'>transmitter quiet — this tower's channels are " +
+                     "composed but not sent.</span>";
+            } else {
+              line = "on air   decoder " + bytes(ch, base + 1, 4) +
+                     "   uplight " + bytes(ch, base + 5, 4);
+              if (t.brightness === 0)
+                line += "\n<span class='warn'>brightness 0 — strips stay black (the uplight " +
+                        "still lights during fire).</span>";
+              if (t.flameLevel === 0)
+                line += "\n<span class='warn'>flame level 0 — CH" + (base + 4) +
+                        " never opens this valve.</span>";
+              else if (t.flameLevel < 128)
+                line += "\n<span class='stale'>flame level " + t.flameLevel + " — on/off valve, " +
+                        "not a dimmer. This only has to clear the decoder's turn-on threshold; " +
+                        "low values can fail to energise or chatter the coil.</span>";
+            }
+            render('t' + i, {
+              connected: t.connected, theme: t.theme, brightness: t.brightness,
+              speed: t.speed, flameLevel: t.flameLevel
+            }, line, !t.connected || t.brightness === 0 || t.flameLevel === 0);
+          });
+
+          var c = s.confluence;
+          if (c) {
+            var cl, cbad = false;
+            if (!c.connected) {
+              cl = "<span class='warn'>DISCONNECTED — confluenceWrite() is skipped, so the " +
+                   "central solenoid on CH1 never fires.</span>";
+              cbad = true;
+            } else if (quiet) {
+              cl = "<span class='stale'>transmitter quiet — CH1 is composed but not sent.</span>";
+            } else {
+              cl = "on air   CH1 " + bytes(ch, 1, 1);
+              if (c.fireLevel === 0) {
+                cl += "\n<span class='warn'>fire level 0 — the valve never opens.</span>";
+                cbad = true;
+              } else if (c.fireLevel < 128) {
+                cl += "\n<span class='stale'>fire level " + c.fireLevel + " — the solenoid is an " +
+                      "on/off valve, not a dimmer: this byte only has to clear the decoder's " +
+                      "turn-on threshold. Low values can fail to energise the coil, or chatter " +
+                      "it. Flame size is gas pressure and orifice, not DMX.</span>";
+              }
+            }
+            // Fire duration is a property of the button, but it gates every valve on the
+            // rig, so it is surfaced next to the solenoid it silences.
+            if (btn.fireDurationMs !== undefined && btn.fireDurationMs < FRAME_MS) {
+              cl += "\n<span class='warn'>fire duration " + btn.fireDurationMs + " ms is shorter " +
+                    "than one " + FRAME_MS + " ms DMX frame — a shot can only ever reach the wire " +
+                    "as a single frame, far too brief to light.</span>";
+              cbad = true;
+            }
+            render('cf', { connected: c.connected, fireLevel: c.fireLevel }, cl, cbad);
+          }
+        }
+
+        function poll() {
+          fetch('/api/state').then(function (r) { return r.json(); }).then(tick).catch(function () {
+            Object.keys(lives).forEach(function (k) {
+              lives[k].textContent = 'device unreachable';
+              lives[k].classList.add('bad');
+            });
+          });
+        }
+
+        var qb0 = document.getElementById('quietBtn'), rb0 = document.getElementById('resumeBtn');
+        function quietPost(url, el) {
+          el.disabled = true;
+          fetch(url, { method: 'POST' })
+            .then(function (r) { return r.json().catch(function () { return {}; })
+              .then(function (j) {
+                if (!r.ok) {
+                  lives.bus.innerHTML = "<span class='warn'>refused — " +
+                    (j.error || r.status) + "</span>";
+                  lives.bus.classList.add('bad');
+                }
+              }); })
+            .catch(function () {})
+            .then(function () { el.disabled = false; poll(); });
+        }
+        if (qb0) qb0.onclick = function () { quietPost('/api/dmx/quiet/start', qb0); };
+        if (rb0) rb0.onclick = function () { quietPost('/api/dmx/quiet/stop', rb0); };
+
+        // Poll only while a tab holding a readout is visible: each request is handled
+        // synchronously inside webTick(), so background polling adds DMX frame jitter.
+        setInterval(function () {
+          var vis = Array.prototype.some.call(
+            document.querySelectorAll("section.tab[data-tab='towers'], section.tab[data-tab='confluence']"),
+            function (t) { return !t.hidden; });
+          if (vis) poll();
+        }, 1000);
+        poll();
       })();
     </script>
 </body>

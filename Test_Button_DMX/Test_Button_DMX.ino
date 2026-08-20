@@ -262,13 +262,24 @@ void loop() {
       confluenceWrite(cfLevel);
     }
 
-    // Log DMX frame on state transitions so we can verify channel values on the wire.
+    // Log the VALVE channels on every state or purge change.
+    //
+    // This used to print slots 1-5 with RGB labels left over from an older channel
+    // map, which made it blind to the four tower valves (8/23/38/53) and to purge
+    // entirely — the reason field logs looked silent about the towers while
+    // solenoids were misbehaving (notes.md). Purge is included in the trigger
+    // because it bypasses the FSM, so a purge would otherwise never log a line.
     static FsmState lastDmxLogState = FSM_IDLE;
-    if (fsmState != lastDmxLogState) {
+    static bool     lastPurgeLogged = false;
+    if (fsmState != lastDmxLogState || purge != lastPurgeLogged) {
       lastDmxLogState = fsmState;
-      LOG_I("[DMX] state=%s CH1(R)=%d CH2(G)=%d CH3(B)=%d CH4(W)=%d CH5(dim)=%d",
-            fsmStateName(fsmState),
-            dmxLastFrame[0], dmxLastFrame[1], dmxLastFrame[2], dmxLastFrame[3], dmxLastFrame[4]);
+      lastPurgeLogged = purge;
+      LOG_I("[DMX] state=%s%s  valves CH1=%u CH8=%u CH23=%u CH38=%u CH53=%u  "
+            "frames sent=%lu skipped=%lu",
+            fsmStateName(fsmState), purge ? " PURGE" : "",
+            dmxLastFrame[0], dmxLastFrame[7], dmxLastFrame[22],
+            dmxLastFrame[37], dmxLastFrame[52],
+            (unsigned long)dmxFramesSent, (unsigned long)dmxFramesSkipped);
     }
 
     // Charge the audio duty budget with what actually reached the wire this frame.

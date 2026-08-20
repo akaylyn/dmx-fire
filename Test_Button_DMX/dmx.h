@@ -42,7 +42,38 @@ extern uint8_t dmxLastFrame[DMX_FRAME_SLOTS];
 // 20 Hz well (spec floor is ~1 Hz).
 static const uint8_t DMX_FRAME_INTERVAL_MS = 50;  // 20 Hz — ~47 ms idle per frame
 
+// Frame accounting for troubleshooting. sent = frames that reached the wire;
+// skipped = ticks where the previous frame had not finished draining. A rising
+// skipped count means the TX path is starving the bus. dmx.cpp always defined
+// these and claimed they were "exposed via dmx.h" — they were not, which is why
+// nothing ever printed them.
+extern uint32_t dmxFramesSent;
+extern uint32_t dmxFramesSkipped;
+
 void dmxSetup();
+
+// --- Transmitter quiet mode (bench testing) -------------------------------
+// Stops emitting frames entirely so a second controller — a manual console or
+// the Enttec — can drive the bus without colliding with this one. DMX has no
+// arbitration: two transmitters on one pair is a garbled bus, not a merge.
+//
+// This is necessarily GLOBAL. A frame carries every slot 1..DMX_FRAME_SLOTS, so
+// there is no such thing as going quiet for one tower — the per-tower
+// equivalent is TowerConfig.connected, which keeps transmitting that tower's
+// channels as zero.
+//
+// SAFETY: fixtures hold their last commanded value when the signal stops, so a
+// valve open at that moment stays open with nothing left to close it. Callers
+// MUST drive everything to 0 and flush it to the wire before going quiet —
+// rigForceEverythingClosed() in ota.h does exactly this. dmxUpdate() also
+// refuses to transmit while quiet, so no other caller can break the silence.
+//
+// Deliberately RAM-only and never persisted. A saved "stop transmitting" flag
+// is the same trap as a saved connected=false: it survives reboots and reads as
+// dead hardware. A power cycle always restores normal output. See notes.md
+// Session 5.
+void dmxSetQuiet(bool quiet);
+bool dmxQuiet();
 
 // Write a byte into the frame buffer. 1-indexed; channels outside
 // 1..DMX_SHADOW_SIZE are ignored so the padding stays zero.

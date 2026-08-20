@@ -17,7 +17,7 @@ const char* otaLastError() { return g_lastError.c_str(); }
 
 // An OTA is only safe from a fully idle rig. Anything that could have a valve
 // open — or open one while the main loop is stalled — blocks the upload.
-static bool safeToStart(String& why) {
+bool rigSafeToStall(String& why) {
   if (fsmState != FSM_IDLE) {
     why = String("FSM is ") + fsmStateName(fsmState) + ", must be IDLE";
     return false;
@@ -36,7 +36,7 @@ static bool safeToStart(String& why) {
 // upload stops it for many seconds. Zeroing the shadow buffer alone is not
 // enough — the bytes have to reach the wire, so this emits several frames,
 // paced past the TX-drain guard in dmxUpdate().
-static void forceEverythingClosed() {
+void rigForceEverythingClosed() {
   // Disarm first: this also aborts any shot audio has in flight, so nothing can
   // re-open a valve between the zeroing below and the loop stalling.
   audioDisarm();
@@ -81,14 +81,14 @@ void otaRegister(WebServer& server) {
         g_received  = 0;
 
         String why;
-        if (!safeToStart(why)) {
+        if (!rigSafeToStall(why)) {
           g_lastError = why;
           LOG_E("[OTA] refused: %s", why.c_str());
           return;            // never call Update.begin(); body is discarded
         }
 
         g_inProgress = true;
-        forceEverythingClosed();
+        rigForceEverythingClosed();
 
         LOG_I("[OTA] starting update from %s", up.filename.c_str());
         // Size is unknown up front with chunked multipart; Update rolls into

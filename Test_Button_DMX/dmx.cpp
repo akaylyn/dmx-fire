@@ -63,7 +63,17 @@ bool dmxReadyToSend() {
   return Serial1.availableForWrite() >= dmxTxIdleFree;
 }
 
+static bool dmxIsQuiet = false;
+
+void dmxSetQuiet(bool quiet) { dmxIsQuiet = quiet; }
+bool dmxQuiet()              { return dmxIsQuiet; }
+
 void dmxUpdate() {
+  // Quiet mode: hand the bus to another controller. Checked before the TX-drain
+  // guard so a muted transmitter never touches the wire and never counts a
+  // skipped frame — see dmxSetQuiet().
+  if (dmxIsQuiet) return;
+
   // Query the UART before starting a new frame: if the previous one has not
   // finished leaving the TX buffer, skip this tick rather than dropping a break
   // on top of bytes still in flight (that baud-rate change is exactly what

@@ -37,6 +37,25 @@ uint32_t fsmElapsedMs();
 // Call exactly once per frame. See docs/spec-rapid-retrigger.md.
 bool     fsmConsumeFirePending();
 
+// Which modes stop firing when the button is released. FIREBALL (0) runs its full
+// fireDurationMs; everything else closes on release. Audio modes 3–6 are included so
+// audio.cpp can end a shot when its limiter grant expires.
+static inline bool modeClosesOnRelease(uint8_t m) {
+  return m == 1 || m == 2 || (m >= 3 && m <= 6);
+}
+
+// End an in-progress burn immediately, whatever the mode is set to. Can ONLY close a
+// valve: it moves FIRE_ACTIVE to its normal post-fire state and can never enter it.
+//
+// A release edge is NOT sufficient. modeClosesOnRelease() is false for FIREBALL, so
+// an operator switching to mode 0 mid-burn would have audio's release ignored and the
+// valve would stay open for the rest of fireDurationMs.
+void fsmEndFireNow();
+
+// Leave END_CUE or COOLDOWN early. Cannot open a valve and does not touch the fire
+// latch. Used only by the audio path, and only for lockouts left by its own shots.
+void fsmSkipCooldown();
+
 // --- API-driven (virtual) button injection ---
 // Used by /api/button/* HTTP handlers and the web UI Test Fire button.
 // Physical and virtual events are OR-merged in the main loop so the FSM

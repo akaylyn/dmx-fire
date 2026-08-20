@@ -1,4 +1,5 @@
 #include <Update.h>
+#include "audio.h"
 #include "ota.h"
 #include "dmx.h"
 #include "towers.h"
@@ -23,6 +24,9 @@ static bool safeToStart(String& why) {
   }
   if (purgeActive()) { why = "purge is active"; return false; }
   if (morseActive()) { why = "morse is playing"; return false; }
+  // Audio can open a valve without any local input, and the main loop stalls for the
+  // whole upload — so audioFireTick() would not be running to close it again.
+  if (audioArmed())  { why = "audio is armed"; return false; }
   return true;
 }
 
@@ -33,6 +37,9 @@ static bool safeToStart(String& why) {
 // enough — the bytes have to reach the wire, so this emits several frames,
 // paced past the TX-drain guard in dmxUpdate().
 static void forceEverythingClosed() {
+  // Disarm first: this also aborts any shot audio has in flight, so nothing can
+  // re-open a valve between the zeroing below and the loop stalling.
+  audioDisarm();
   TowerState off = {};
   for (uint8_t i = 0; i < NUM_TOWERS; i++) towerWrite(i, off);
   confluenceWrite(0);

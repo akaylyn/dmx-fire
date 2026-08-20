@@ -154,6 +154,16 @@
     }
 
     /* Slider row: track + numeric readout */
+    .audlink { font-family: ui-monospace, Menlo, monospace; font-size: .82rem;
+      line-height: 1.5; white-space: pre-wrap; color: var(--muted); }
+    .audlink b { color: var(--fg); }
+    .audlink .ok { color: #0a0; font-weight: 700; }
+    .audlink .bad { color: var(--accent); font-weight: 700; }
+    .audbar { height: 10px; border-radius: 5px; background: var(--line);
+      overflow: hidden; margin-top: 12px; }
+    .audbar > div { height: 100%; width: 0; background: var(--accent);
+      transition: width .2s; }
+
     .sr {
       display: flex;
       align-items: center;
@@ -513,6 +523,7 @@
       <button type='button' data-tab='morse' role='tab'>Morse</button>
       <button type='button' data-tab='confluence' role='tab'>Confluence</button>
       <button type='button' data-tab='towers' role='tab'>Tower Configs</button>
+      <button type='button' data-tab='audio' role='tab'>Audio</button>
       <button type='button' data-tab='firmware' role='tab'>Firmware</button>
     </nav>
   </header>
@@ -848,6 +859,66 @@
       </div>
     </section>
 
+    <!-- ===== AUDIO ===== -->
+    <section class='tab' data-tab='audio' role='tabpanel' hidden>
+      <h2>Audio</h2>
+
+      <fieldset><legend>Link</legend>
+        <p class='dmx-addr'>Audio node streams UDP feature packets to port <code>4210</code>.
+          Lights react whenever the link is fresh; fire also needs ARM and an audio
+          button mode (3-6).</p>
+        <div id='audLink' class='audlink'>waiting for packets...</div>
+        <div class='audbar'><div id='audBudget'></div></div>
+        <p class='testfire-hint' id='audBudgetTxt'></p>
+      </fieldset>
+
+      <fieldset><legend>Arm</legend>
+        <div class='arm-row'>
+          <span class='arm-state' id='audArmState'>Disarmed</span>
+        </div>
+        <button type='button' id='audArmBtn'>ARM AUDIO FIRE</button>
+        <button type='button' id='audDisarmBtn' class='disarmed'>DISARM</button>
+        <p class='testfire-hint'>Arming persists until you disarm or the device reboots.
+          There is no timer &mdash; the dead-man is the audio link itself: no fresh
+          packets for <span id='audStaleTxt'>500</span> ms means no fire.</p>
+      </fieldset>
+
+      <fieldset><legend>Safety limits</legend>
+        <form method='POST' action='/set'>
+          <input type='hidden' name='target' value='audio'>
+          <label>Duty ceiling %<div class='sr'><input type='range' name='audDutyPct' min='0' max='50' step='1' value='40' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>40</span></div></label>
+          <label>Duty window (ms)<div class='sr'><input type='range' name='audDutyWinMs' min='2000' max='60000' step='1000' value='10000' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>10000</span></div></label>
+          <label>Min gap (ms)<div class='sr'><input type='range' name='audMinGapMs' min='100' max='5000' step='50' value='200' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>200</span></div></label>
+          <label>Max single open (ms)<div class='sr'><input type='range' name='audMaxOpenMs' min='50' max='3000' step='50' value='1000' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>1000</span></div></label>
+          <label>Shot length (ms)<div class='sr'><input type='range' name='audShotMs' min='50' max='2000' step='10' value='150' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>150</span></div></label>
+          <label>Lead / pre-fire (ms)<div class='sr'><input type='range' name='audLeadMs' min='0' max='500' step='10' value='120' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>120</span></div></label>
+          <label>Stale timeout (ms)<div class='sr'><input type='range' name='audStaleMs' min='100' max='2000' step='50' value='500' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>500</span></div></label>
+          <p class='testfire-hint'>Burst is hard-capped at 3000 ms whatever the duty
+            window allows &mdash; no audio shot may put out more propane at once than one
+            manual FIREBALL press. Lead should be MEASURED: film a shot at 120fps and
+            count frames from the LED to visible flame.</p>
+        </form>
+      </fieldset>
+
+      <fieldset><legend>Response</legend>
+        <form method='POST' action='/set'>
+          <input type='hidden' name='target' value='audio'>
+          <label>Bass open<div class='sr'><input type='range' name='audBassOn' min='0' max='255' step='1' value='170' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>170</span></div></label>
+          <label>Bass close<div class='sr'><input type='range' name='audBassOff' min='0' max='255' step='1' value='140' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>140</span></div></label>
+          <label>Beat min<div class='sr'><input type='range' name='audBeatMin' min='0' max='255' step='1' value='90' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>90</span></div></label>
+          <label>Drop thresh<div class='sr'><input type='range' name='audDropMin' min='0' max='255' step='1' value='200' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>200</span></div></label>
+          <label>Drop gap ms<div class='sr'><input type='range' name='audDropGapMs' min='500' max='30000' step='500' value='3000' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>3000</span></div></label>
+          <label>Drop shot ms<div class='sr'><input type='range' name='audDropShotMs' min='50' max='2000' step='10' value='400' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>400</span></div></label>
+          <label>Light mode<select name='audLightMode'>
+            <option value='0'>Off</option>
+            <option value='1' selected>Pulse</option>
+            <option value='2'>Bands</option>
+          </select></label>
+          <label>Light depth<div class='sr'><input type='range' name='audLightDepth' min='0' max='255' step='1' value='150' oninput="this.nextElementSibling.textContent=this.value"><span class='val'>150</span></div></label>
+        </form>
+      </fieldset>
+    </section>
+
     <!-- ===== FIRMWARE (OTA) ===== -->
     <section class='tab' data-tab='firmware' role='tabpanel' hidden>
       <h2>Firmware Update</h2>
@@ -1120,6 +1191,53 @@
         }).catch(function (e) { say('Cannot reach device: ' + e.message); });
       });
     })();
-  </script>
+  
+      // --- Audio tab: arm latch + live link readout ---
+      // Arming is a server-side LATCH, not press-and-hold, so this deliberately does
+      // not reuse setupHold() the way Test Fire and Purge do.
+      (function () {
+        var arm = document.getElementById('audArmBtn');
+        var dis = document.getElementById('audDisarmBtn');
+        var st = document.getElementById('audArmState');
+        var lk = document.getElementById('audLink');
+        var bar = document.getElementById('audBudget');
+        var btx = document.getElementById('audBudgetTxt');
+        var stale = document.getElementById('audStaleTxt');
+        if (!arm) return;
+
+        function post(u) { return fetch(u, { method: 'POST' }).then(refresh); }
+        arm.onclick = function () { post('/api/audio/arm'); };
+        dis.onclick = function () { post('/api/audio/disarm'); };
+
+        function refresh() {
+          return fetch('/api/state').then(function (r) { return r.json(); }).then(function (j) {
+            var a = j.audio;
+            if (!a) return;
+            st.textContent = a.armed ? 'ARMED' : 'Disarmed';
+            st.className = 'arm-state' + (a.armed ? ' bad' : '');
+            if (stale) stale.textContent = a.cfg.staleMs;
+            lk.innerHTML =
+              'link  ' + (a.fresh ? '<span class=ok>FRESH</span>' : '<span class=bad>STALE</span>') +
+              '   peer ' + a.peer + '\n' +
+              'pkts ' + a.packets + '  ' + a.pps + '/s   gaps ' + a.gaps + '   bad ' + a.bad + '\n' +
+              'bass ' + a.bass + '  mid ' + a.mid + '  treb ' + a.treble + '  lvl ' + a.level + '\n' +
+              'bpm ' + (a.bpm || '--') + '  beat ' + (a.beatMs || '--') + 'ms  ' +
+              (a.confident ? '<span class=ok>grid locked</span>' : 'grid unlocked') +
+              (a.beat ? '   <b>BEAT</b>' : '');
+            var cap = a.dutyCapMs || 0, used = a.dutyUsedMs || 0;
+            bar.style.width = (cap ? Math.min(100, used * 100 / cap) : 0) + '%';
+            btx.textContent = 'propane budget ' + used + ' / ' + cap + ' ms';
+          });
+        }
+
+        // Poll only while the tab is visible: each request is handled synchronously
+        // inside webTick(), so background polling adds DMX frame jitter for nothing.
+        setInterval(function () {
+          var t = document.querySelector("section.tab[data-tab='audio']");
+          if (t && !t.hidden) refresh();
+        }, 500);
+        refresh();
+      })();
+    </script>
 </body>
 </html>

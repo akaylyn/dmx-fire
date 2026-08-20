@@ -24,6 +24,7 @@ Binds to localhost only (security: this is a debug tool, not exposed to LAN).
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 import uuid
@@ -58,6 +59,21 @@ RELOAD_SNIPPET = b"""<script>
 # Fire armed" state alongside this id; when the device reboots (or this mock is
 # restarted) the id changes and the browser re-closes the arming cover.
 STATE = {
+    # Mirrors the audio block in handleApiState(). build_state_json() animates the
+    # live values so the Audio tab's meters and beat blinker work against the mock.
+    "audio": {
+        "armed": False, "fresh": False, "peer": "0.0.0.0", "port": 4210,
+        "ageMs": -1, "pps": 0, "packets": 0, "gaps": 0, "bad": 0, "floods": 0,
+        "bass": 0, "mid": 0, "treble": 0, "level": 0, "bpm": 0, "beatMs": 0,
+        "beat": False, "confident": False, "shotActive": False,
+        "dutyUsedMs": 0, "dutyCapMs": 3000,
+        "cfg": {
+            "shotMs": 150, "minGapMs": 200, "dutyPct": 40, "dutyWinMs": 10000,
+            "maxOpenMs": 1000, "leadMs": 120, "staleMs": 500,
+            "bassOn": 170, "bassOff": 140, "beatMin": 90, "dropMin": 200,
+            "dropGapMs": 3000, "dropShotMs": 400, "lightMode": 1, "lightDepth": 150,
+        },
+    },
     "boot_id": uuid.uuid4().hex,
     "boot_ms": int(time.time() * 1000),
     "fsm": {"state": "IDLE", "since_ms": 0},
@@ -134,6 +150,19 @@ def simulate_fire_cycle() -> None:
 
 def update_config(target: str, args: dict[str, str]) -> None:
     """Apply a /set form submission to STATE — mirrors handleSet() in web.cpp."""
+    if target == "audio":
+        cfg = STATE["audio"]["cfg"]
+        for k, v in args.items():
+            if k == "target":
+                continue
+            # Web field names are audXxx; the JSON keys drop the prefix.
+            key = k[3].lower() + k[4:] if k.startswith("aud") and len(k) > 3 else k
+            if key in cfg:
+                cfg[key] = int(v)
+        if cfg["bassOff"] >= cfg["bassOn"]:
+            cfg["bassOff"] = max(0, cfg["bassOn"] - 8)
+        return
+
     if target == "button":
         STATE["button"].update(
             mode=int(args.get("mode", 0)),
@@ -174,6 +203,27 @@ def update_config(target: str, args: dict[str, str]) -> None:
 
 def build_state_json() -> bytes:
     """JSON shape mimics handleApiState() in web.cpp — same field names."""
+    # Synthetic 120 BPM source so the meters, beat blinker and budget bar move.
+    # The firmware derives these from real packets; here they are a function of time.
+    a = STATE["audio"]
+    if a["armed"] or a["fresh"]:
+        t = time.time()
+        phase = (t % 0.5) / 0.5
+        env = math.exp(-phase * 4.0)
+        a["bass"] = int(255 * env)
+        a["mid"] = int(120 + 100 * math.sin(t * 2.1))
+        a["treble"] = int(80 + 70 * math.sin(t * 5.3))
+        a["level"] = max(a["bass"], a["mid"], a["treble"])
+        a["bpm"], a["beatMs"] = 120, 500
+        a["beat"] = phase < 0.24
+        a["confident"] = a["fresh"] = True
+        a["pps"], a["ageMs"] = 40, 12
+        a["packets"] += 1
+        a["peer"] = "192.168.4.7"
+        cap = min(a["cfg"]["dutyWinMs"] * a["cfg"]["dutyPct"] // 100, 3000)
+        a["dutyCapMs"] = cap
+        a["dutyUsedMs"] = int(cap * (1 + math.sin(t * 0.4)) / 4)
+
     now = int(time.time() * 1000)
     fsm = STATE["fsm"]
     payload = {
@@ -188,6 +238,8 @@ def build_state_json() -> bytes:
         "morse": STATE["morse"],
         # DMX shadow buffer placeholder (64 zero-filled channels). Real device
         # fills these from dmxLastFrame[] — for UI verification, zeroes are fine.
+        # Inserted before dmx, matching handleApiState()'s ordering in web.cpp.
+        "audio": STATE["audio"],
         "dmx": {"ch": [0] * 64},
     }
     return json.dumps(payload).encode("utf-8")
@@ -343,6 +395,27 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/captive/dismiss":
             log("POST /api/captive/dismiss")
             self._send(204)
+        elif self.path == "/api/audio/arm":
+            log("POST /api/audio/arm")
+            with LOCK:
+                STATE["audio"]["armed"] = True
+                STATE["audio"]["fresh"] = True
+            self._send(200)
+        elif self.path == "/api/audio/disarm":
+            log("POST /api/audio/disarm")
+            with LOCK:
+                STATE["audio"]["armed"] = False
+            self._send(200)
+        elif self.path == "/api/purge/start":
+            log("POST /api/purge/start")
+            with LOCK:
+                STATE["purge"] = True
+            self._send(200)
+        elif self.path == "/api/purge/stop":
+            log("POST /api/purge/stop")
+            with LOCK:
+                STATE["purge"] = False
+            self._send(200)
         else:
             self._send(404, b"not found")
 

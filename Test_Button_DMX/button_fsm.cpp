@@ -81,8 +81,11 @@ void buttonFsmTick(bool wasPressed, bool wasReleased, bool isHeld) {
       if (elapsed >= (uint32_t)buttonConfig.fireDurationMs) {
         enterState(afterFireState());
       }
-      // PARTY / MACHINE_GUN: also close solenoid on release (FIREBALL runs full duration)
-      if ((buttonConfig.mode == 1 || buttonConfig.mode == 2) && wasReleased) {
+      // Close on release. FIREBALL (0) runs its full duration; PARTY (1) and
+      // MACHINE_GUN (2) stop when the operator lets go; every audio mode (3–6) is
+      // release-terminated too, because audio.cpp owns shot length via the limiter
+      // grant and needs to be able to stop a shot early.
+      if (modeClosesOnRelease(buttonConfig.mode) && wasReleased) {
         enterState(afterFireState());
       }
       break;
@@ -95,6 +98,23 @@ void buttonFsmTick(bool wasPressed, bool wasReleased, bool isHeld) {
       if (elapsed >= (uint32_t)buttonConfig.cooldownMs) enterState(FSM_IDLE);
       break;
   }
+}
+
+// End a burn now, regardless of mode. Only ever CLOSES — the only transition it can
+// make is FIRE_ACTIVE -> afterFireState(), never into FIRE_ACTIVE.
+void fsmEndFireNow() {
+  if (fsmState == FSM_FIRE_ACTIVE) enterState(afterFireState());
+}
+
+// Cut a post-fire lockout short. Can ONLY leave END_CUE or COOLDOWN early — it can
+// never open a valve, and it deliberately does not touch g_firePending, so a frame of
+// valve-open that is still owed is never swallowed (unlike buttonInjectReset()).
+//
+// Audio modes need this because cooldownMs is tuned for manual fire and would swallow
+// every beat. audio.cpp scopes the call to lockouts left by shots audio itself
+// started, so the operator's physical button keeps its lockout either way.
+void fsmSkipCooldown() {
+  if (fsmState == FSM_END_CUE || fsmState == FSM_COOLDOWN) enterState(FSM_IDLE);
 }
 
 // --- Virtual button injection (API / web UI Test Fire) ---

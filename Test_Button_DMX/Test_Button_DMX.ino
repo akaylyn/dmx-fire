@@ -10,6 +10,7 @@
 
 #include <M5Unified.h>
 #include <FastLED.h>
+#include "board_config.h"
 #include "themes.h"
 #include "dmx.h"
 #include "towers.h"
@@ -17,15 +18,21 @@
 #include "button_fsm.h"
 #include "storage.h"
 #include "web.h"
+#include "audio.h"
 #include "log.h"
 #include "morse.h"
 #include "tests.h"
 
-#define KEY_INPUT_PIN 39  // simple switch
+// Pins and feature flags come from board_config.h so a bench target (e.g.
+// CoreS3, used to exercise the upload paths) compiles without a NeoPixel or a
+// GPIO39 button it does not have.
+#if HAS_PHYSICAL_BUTTON
 m5::Button_Class keyButton;
+#endif
 
-#define ATOM_RGB_PIN 35  // one-wire data line
+#if HAS_STATUS_LED
 CRGB ATOM_LED[1];
+#endif
 
 // Swap the uplight over to the configured fire look. Touches ONLY the uplight
 // fields — the accumulator strips (r/g/b) keep running the theme underneath, so
@@ -39,6 +46,56 @@ static inline void applyFireLook(TowerState& s) {
   s.white = buttonConfig.fireUpW;
 }
 
+// Audio-reactive glow, layered UNDER the fire / end-cue / purge chain so every
+// existing override still looks exactly as it did.
+//
+// Composition is max(), additive — never multiplicative. The green/blue/fire gradient
+// themes return a fully zeroed TowerState for 3200 ms of every 4000 ms cycle, so a
+// multiplicative modulation would be invisible 80% of the time. An additive glow
+// lights the blank phase and can never dim the bright phase.
+//
+// Colour reuses the fire-uplight look, so audio modulation reads as the fire
+// breathing before it fires. No new colour config.
+static inline void applyAudioLook(TowerState& s, uint8_t index) {
+  if (audioConfig.lightMode == 0) return;
+
+  const AudioFeatures& a = audioSnapshot();
+
+  // Envelope is computed in audio.cpp with a hard decay floor; here we only scale it.
+  // No hard square gate anywhere — strobing at beat rate is a photosensitivity
+  // hazard, the same reason the uplight does not strobe with mgOn.
+  uint16_t depth = audioConfig.lightDepth;
+
+  if (audioConfig.lightMode == 2) {
+    // Band mode: bass/mid/treble drive the uplight RGB. Strips keep the theme.
+    uint8_t r = (uint8_t)((uint16_t)a.bass   * depth / 255);
+    uint8_t g = (uint8_t)((uint16_t)a.mid    * depth / 255);
+    uint8_t b = (uint8_t)((uint16_t)a.treble * depth / 255);
+    if (r > s.ur) s.ur = r;
+    if (g > s.ug) s.ug = g;
+    if (b > s.ub) s.ub = b;
+    return;
+  }
+
+  // Pulse mode: the whole uplight breathes with the level envelope, in the fire
+  // colour. Strips get a smaller accent so the accumulator body moves too.
+  uint16_t env = (uint16_t)audioEnvelope() * depth / 255;
+  uint8_t  ur  = (uint8_t)((uint16_t)buttonConfig.fireUpR * env / 255);
+  uint8_t  ug  = (uint8_t)((uint16_t)buttonConfig.fireUpG * env / 255);
+  uint8_t  ub  = (uint8_t)((uint16_t)buttonConfig.fireUpB * env / 255);
+  if (ur > s.ur) s.ur = ur;
+  if (ug > s.ug) s.ug = ug;
+  if (ub > s.ub) s.ub = ub;
+
+  uint8_t sr = (uint8_t)((uint16_t)ur / 3);
+  uint8_t sg = (uint8_t)((uint16_t)ug / 3);
+  uint8_t sb = (uint8_t)((uint16_t)ub / 3);
+  if (sr > s.r) s.r = sr;
+  if (sg > s.g) s.g = sg;
+  if (sb > s.b) s.b = sb;
+  (void)index;  // per-tower phase offset is a later refinement
+}
+
 void setup() {
   delay(500);
 
@@ -47,22 +104,28 @@ void setup() {
   M5.begin(cfg);
   M5.Ex_I2C.release();  // Free up PORTA so we can use it for Serial1
 
-  Serial.print("\nStartup.\n");
+  Serial.printf("\nStartup. board=%s\n", BOARD_NAME);
 
-  pinMode(KEY_INPUT_PIN, INPUT_PULLUP);
-  pinMode(ATOM_RGB_PIN, OUTPUT);
+#if HAS_PHYSICAL_BUTTON
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+#endif
 
-  FastLED.addLeds<WS2812, ATOM_RGB_PIN, GRB>(ATOM_LED, 1);
+#if HAS_STATUS_LED
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  FastLED.addLeds<WS2812, STATUS_LED_PIN, GRB>(ATOM_LED, 1);
   ATOM_LED[0] = CRGB::Red;
   FastLED.setBrightness(255);
   FastLED.show();
+#endif
 
   dmxSetup();
   towerSetup();
   confluenceSetup();
   buttonFsmSetup();
+  audioSetup();   // code defaults only; storageLoad() below overrides from NVS
   storageLoad();  // overwrite defaults with persisted config before web UI starts
   webSetup();
+  audioNetBegin();  // bind UDP 4210 — needs the SoftAP up, so it follows webSetup()
 
   runDiagnostics();  // prints pass/fail report to serial; also runs a 500 ms DMX visual test
 }
@@ -70,19 +133,41 @@ void setup() {
 void loop() {
   M5.update();
   webTick();
+  // Drain the audio socket in loop context, on the same single thread as every other
+  // writer. Placed after webTick() so an arm/disarm POST handled this iteration is
+  // already visible, and before the button merge below so a beat received now reaches
+  // buttonFsmTick() in this same iteration rather than the next one.
+  audioTick();
+#if HAS_STATUS_LED
   FastLED.show();
+#endif
 
-  bool pressed = (digitalRead(KEY_INPUT_PIN) == LOW);
+#if HAS_PHYSICAL_BUTTON
+  bool pressed = (digitalRead(BUTTON_PIN) == LOW);
   keyButton.setRawState(millis(), pressed);
+#endif
 
   // No keepalive here: the 50 Hz frame loop below is the single DMX writer. A
   // second writer could call update() while a frame was still in the shift
   // register, and the baud-rate change for the next break would mangle its tail.
 
   // OR physical events with API-injected events so the FSM is single-sourced.
+  // Without a physical button (bench targets) only the API path drives the FSM,
+  // so a floating pin can never look like a held button and fire on its own.
+  // Audio decides and injects BEFORE the merge below, so a beat received this
+  // iteration reaches buttonFsmTick() in this same iteration rather than the next.
+  audioFireTick();
+  audioSustainTick();
+
+#if HAS_PHYSICAL_BUTTON
   bool btnPressed  = keyButton.wasPressed()  || buttonConsumePress();
   bool btnReleased = keyButton.wasReleased() || buttonConsumeRelease();
   bool btnHeld     = keyButton.isPressed()   || buttonVirtualHeld();
+#else
+  bool btnPressed  = buttonConsumePress();
+  bool btnReleased = buttonConsumeRelease();
+  bool btnHeld     = buttonVirtualHeld();
+#endif
   if (btnPressed)  LOG_I("[BTN] pressed");
   if (btnReleased) LOG_I("[BTN] released");
   buttonFsmTick(btnPressed, btnReleased, btnHeld);
@@ -113,6 +198,11 @@ void loop() {
     if (buttonConfig.mode == 2) {
       uint32_t period = (uint32_t)buttonConfig.machineGunBurstMs + DMX_FRAME_INTERVAL_MS;
       mgOn = (millis() % period) < (uint32_t)buttonConfig.machineGunBurstMs;
+    } else if (buttonConfig.mode == 6) {
+      // Beat-anchored, not boot-anchored. The mode-2 expression above is a free
+      // running millis() % period with no relationship to the music, so it cannot
+      // be reused here. Fails closed when the beat grid is lost.
+      mgOn = audioBeatGate(buttonConfig.machineGunBurstMs);
     }
 
     for (uint8_t i = 0; i < NUM_TOWERS; i++) {
@@ -125,6 +215,11 @@ void loop() {
       // white flash still never opens a valve.
       TowerState state = themeRender(towerConfigs[i].themeName, i, millis(),
                                      towerConfigs[i].bright, towerConfigs[i].speed);
+
+      // Audio glow sits UNDER the fire / end-cue / purge chain below, so those
+      // overrides still look exactly as they always did. Gated on freshness alone:
+      // lights react whether or not fire is armed.
+      if (audioFresh()) applyAudioLook(state, i);
 
       if (firing) {
         // Open the per-tower propane valve and light the uplight to match. The
@@ -176,10 +271,22 @@ void loop() {
             dmxLastFrame[0], dmxLastFrame[1], dmxLastFrame[2], dmxLastFrame[3], dmxLastFrame[4]);
     }
 
+    // Charge the audio duty budget with what actually reached the wire this frame.
+    // A fixture holds its last commanded byte until the next frame, so an open frame
+    // IS 50 ms of gas. Counted here because this is the only place that knows.
+    //
+    // Every source counts — button, Test Fire, morse, purge — because propane is
+    // physical, not per-source. The morse term matters: morseTick() drives confluence
+    // CH1 directly and is not gated on `firing`, so leaving it out would let a long
+    // message burn uncounted.
+    audioNoteFrame(purge || (firing && mgOn)
+                   || (confluenceConfig.connected && morseActive()));
+
     dmxUpdate();
   }
 
   // Onboard LED reflects FSM state
+#if HAS_STATUS_LED
   EVERY_N_MILLISECONDS(20) {
     static uint8_t idleHue = 0;
     switch (fsmState) {
@@ -189,6 +296,7 @@ void loop() {
       default:              ATOM_LED[0] = CHSV(idleHue++, 255, 255);    break;
     }
   }
+#endif
 
   if (M5.BtnA.wasPressed()) {
     LOG_I("[BTN] Atom pressed — running diagnostics");

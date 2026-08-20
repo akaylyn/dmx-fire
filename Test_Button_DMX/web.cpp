@@ -8,6 +8,7 @@
 #include "towers.h"
 #include "confluence.h"
 #include "button_fsm.h"
+#include "audio.h"
 #include "morse.h"
 #include "storage.h"
 #include "secrets.h"
@@ -126,7 +127,7 @@ static String connectedCheck(const String& id, bool checked) {
 
 static String buildPage() {
   String s;
-  s.reserve(36000);  // grown by the Firmware/OTA tab + its upload script
+  s.reserve(46000);  // grown by the Firmware/OTA tab and the Audio tab
 
   // --- Head + CSS ---
   s += F("<!DOCTYPE html><html><head>"
@@ -167,6 +168,12 @@ static String buildPage() {
          "select{background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23555' d='M6 8L0 0h12z'/%3E%3C/svg%3E\");"
          "background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}"
          ".sr{display:flex;align-items:center;gap:14px;margin-top:8px}"
+         ".audlink{font-family:ui-monospace,Menlo,monospace;font-size:.82rem;line-height:1.5;white-space:pre-wrap;color:var(--muted)}"
+         ".audlink b{color:var(--fg)}"
+         ".audlink .ok{color:#0a0;font-weight:700}"
+         ".audlink .bad{color:var(--accent);font-weight:700}"
+         ".audbar{height:10px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:12px}"
+         ".audbar>div{height:100%;width:0;background:var(--accent);transition:width .2s}"
          "input[type=range]{flex:1;height:36px;margin:0;-webkit-appearance:none;"
          "appearance:none;background:transparent}"
          "input[type=range]::-webkit-slider-runnable-track{height:6px;background:var(--line);border-radius:3px}"
@@ -259,6 +266,7 @@ static String buildPage() {
          "<button type='button' data-tab='morse' role='tab'>Morse</button>"
          "<button type='button' data-tab='confluence' role='tab'>Confluence</button>"
          "<button type='button' data-tab='towers' role='tab'>Tower Configs</button>"
+         "<button type='button' data-tab='audio' role='tab'>Audio</button>"
          "<button type='button' data-tab='firmware' role='tab'>Firmware</button>"
          "</nav></header><main>");
 
@@ -322,11 +330,26 @@ static String buildPage() {
          "<option value='2'");
   if (buttonConfig.mode == 2) s += F(" selected");
   s += F(">Machine Gun</option>"
-         "</select></label>");
+         "<option value='3'");
+  if (buttonConfig.mode == 3) s += F(" selected");
+  s += F(">Audio: beat pop</option>"
+         "<option value='4'");
+  if (buttonConfig.mode == 4) s += F(" selected");
+  s += F(">Audio: sustained bass</option>"
+         "<option value='5'");
+  if (buttonConfig.mode == 5) s += F(" selected");
+  s += F(">Audio: drop only</option>"
+         "<option value='6'");
+  if (buttonConfig.mode == 6) s += F(" selected");
+  s += F(">Audio: machine gun on beat</option>"
+         "</select></label>"
+         "<p class='testfire-hint' id='audModeHint' style='display:none'>"
+         "Audio mode &mdash; also needs a live audio link and ARM on the Audio tab. "
+         "Limits live there too, not here.</p>");
   s += rangeSlider("Fire duration (ms)", "fireDurationMs",
                    buttonConfig.fireDurationMs, 10, 10000, 10);
   s += F("<div id='mgRow'");
-  if (buttonConfig.mode != 2) s += F(" style='display:none'");
+  if (buttonConfig.mode != 2 && buttonConfig.mode != 6) s += F(" style='display:none'");
   s += F(">");
   s += rangeSlider("Machine gun burst (ms)", "machineGunBurstMs",
                    buttonConfig.machineGunBurstMs, 10, 2000, 10);
@@ -440,6 +463,64 @@ static String buildPage() {
   s += F("</section>");
 
   // --- Firmware (OTA) tab ---
+  // --- Audio tab ---
+  s += F("<section class='tab' data-tab='audio' role='tabpanel' hidden>"
+         "<h2>Audio</h2>"
+         "<fieldset><legend>Link</legend>"
+         "<p class='dmx-addr'>Audio node streams UDP feature packets to port "
+         "<code>4210</code>. Lights react whenever the link is fresh; fire also "
+         "needs ARM and an audio button mode (3-6).</p>"
+         "<div id='audLink' class='audlink'>waiting for packets...</div>"
+         "<div class='audbar'><div id='audBudget'></div></div>"
+         "<p class='testfire-hint' id='audBudgetTxt'></p>"
+         "</fieldset>"
+         "<fieldset><legend>Arm</legend>"
+         "<div class='arm-row'>"
+         "<span class='arm-state' id='audArmState'>Disarmed</span>"
+         "</div>"
+         "<button type='button' id='audArmBtn'>ARM AUDIO FIRE</button>"
+         "<button type='button' id='audDisarmBtn' class='disarmed'>DISARM</button>"
+         "<p class='testfire-hint'>Arming persists until you disarm or the device "
+         "reboots. There is no timer &mdash; the dead-man is the audio link itself: "
+         "no fresh packets for <span id='audStaleTxt'>500</span> ms means no fire.</p>"
+         "</fieldset>"
+         "<fieldset><legend>Safety limits</legend>"
+         "<form method='POST' action='/set'>"
+         "<input type='hidden' name='target' value='audio'>");
+  s += rangeSlider("Duty ceiling %",      "audDutyPct",   audioConfig.dutyPct,   0, 50);
+  s += rangeSlider("Duty window (ms)",    "audDutyWinMs", audioConfig.dutyWinMs, 2000, 60000, 1000);
+  s += rangeSlider("Min gap (ms)",        "audMinGapMs",  audioConfig.minGapMs,  100, 5000, 50);
+  s += rangeSlider("Max single open (ms)","audMaxOpenMs", audioConfig.maxOpenMs, 50, 3000, 50);
+  s += rangeSlider("Shot length (ms)",    "audShotMs",    audioConfig.shotMs,    50, 2000, 10);
+  s += rangeSlider("Lead / pre-fire (ms)","audLeadMs",    audioConfig.leadMs,    0, 500, 10);
+  s += rangeSlider("Stale timeout (ms)",  "audStaleMs",   audioConfig.staleMs,   100, 2000, 50);
+  s += F("<p class='testfire-hint'>Burst is hard-capped at 3000 ms whatever the "
+         "duty window allows &mdash; no audio shot may put out more propane at once "
+         "than one manual FIREBALL press. Lead should be MEASURED: film a shot at "
+         "120fps and count frames from the LED to visible flame.</p>"
+         "</form></fieldset>"
+         "<fieldset><legend>Response</legend>"
+         "<form method='POST' action='/set'>"
+         "<input type='hidden' name='target' value='audio'>");
+  s += rangeSlider("Bass open",   "audBassOn",     audioConfig.bassOn,     0, 255);
+  s += rangeSlider("Bass close",  "audBassOff",    audioConfig.bassOff,    0, 255);
+  s += rangeSlider("Beat min",    "audBeatMin",    audioConfig.beatMin,    0, 255);
+  s += rangeSlider("Drop thresh", "audDropMin",    audioConfig.dropMin,    0, 255);
+  s += rangeSlider("Drop gap ms", "audDropGapMs",  audioConfig.dropGapMs,  500, 30000, 500);
+  s += rangeSlider("Drop shot ms","audDropShotMs", audioConfig.dropShotMs, 50, 2000, 10);
+  s += F("<label>Light mode<select name='audLightMode'>");
+  {
+    const char* lm[][2] = {{"0","Off"},{"1","Pulse"},{"2","Bands"}};
+    for (auto& o : lm) {
+      s += F("<option value='"); s += o[0]; s += '\'';
+      if (audioConfig.lightMode == (uint8_t)atoi(o[0])) s += F(" selected");
+      s += '>'; s += o[1]; s += F("</option>");
+    }
+  }
+  s += F("</select></label>");
+  s += rangeSlider("Light depth", "audLightDepth", audioConfig.lightDepth, 0, 255);
+  s += F("</form></fieldset></section>");
+
   s += F("<section class='tab' data-tab='firmware' role='tabpanel' hidden>"
          "<h2>Firmware Update</h2>"
          "<fieldset><legend>Upload over WiFi</legend>"
@@ -519,7 +600,7 @@ static String buildPage() {
          "window._dmxBootId=s.boot_id||null;if(rf)rf();if(rp)rp();}).catch(function(){});})();"
          "(function(){var sel=document.getElementById('modeSelect');"
          "var row=document.getElementById('mgRow');if(!sel||!row)return;"
-         "sel.addEventListener('change',function(){row.style.display=sel.value==='2'?'':'none';});})();"
+         "var hint=document.getElementById('audModeHint');""function upd(){var v=sel.value;row.style.display=(v==='2'||v==='6')?'':'none';if(hint)hint.style.display=(v>='3'&&v<='6')?'':'none';}""sel.addEventListener('change',upd);upd();})();"
          "(function(){var t=document.getElementById('morseText');"
          "var g=document.getElementById('morseGo');var sp=document.getElementById('morseStop');"
          "if(!t||!g||!sp)return;"
@@ -562,6 +643,42 @@ static String buildPage() {
          "else{say('Upload failed at '+bar.value+'% — connection lost.');}g.disabled=false;});"
          "g.disabled=true;say('Uploading '+Math.round(fl.size/1024)+' KB...');x.send(fd);"
          "}).catch(function(e){say('Cannot reach device: '+e.message);});});})();"
+         // --- Audio tab: arm latch + live link readout ---
+         // Arming is a server-side LATCH, not press-and-hold, so this deliberately
+         // does not reuse the setup() hold factory used by Test Fire and Purge.
+         "(function(){"
+         "var arm=document.getElementById('audArmBtn'),dis=document.getElementById('audDisarmBtn');"
+         "var st=document.getElementById('audArmState'),lk=document.getElementById('audLink');"
+         "var bar=document.getElementById('audBudget'),btx=document.getElementById('audBudgetTxt');"
+         "var stale=document.getElementById('audStaleTxt');"
+         "if(!arm)return;"
+         "function post(u){return fetch(u,{method:'POST'}).then(refresh);}"
+         "arm.onclick=function(){post('/api/audio/arm');};"
+         "dis.onclick=function(){post('/api/audio/disarm');};"
+         "function refresh(){return fetch('/api/state').then(function(r){return r.json();})"
+         ".then(function(j){var a=j.audio;if(!a)return;"
+         "st.textContent=a.armed?'ARMED':'Disarmed';"
+         "st.className='arm-state'+(a.armed?' bad':'');"
+         "if(stale)stale.textContent=a.cfg.staleMs;"
+         "lk.innerHTML='link  '+(a.fresh?'<span class=ok>FRESH</span>':'<span class=bad>STALE</span>')"
+         "+'   peer '+a.peer+'\\n'"
+         "+'pkts '+a.packets+'  '+a.pps+'/s   gaps '+a.gaps+'   bad '+a.bad+'\\n'"
+         "+'bass '+a.bass+'  mid '+a.mid+'  treb '+a.treble+'  lvl '+a.level+'\\n'"
+         "+'bpm '+(a.bpm||'--')+'  beat '+(a.beatMs||'--')+'ms  '"
+         "+(a.confident?'<span class=ok>grid locked</span>':'grid unlocked')"
+         "+(a.beat?'   <b>BEAT</b>':'');"
+         "var cap=a.dutyCapMs||0,used=a.dutyUsedMs||0;"
+         "bar.style.width=(cap?Math.min(100,used*100/cap):0)+'%';"
+         "btx.textContent='propane budget '+used+' / '+cap+' ms';"
+         "});}"
+         // Only poll while the Audio tab is actually visible: each request is
+         // handled synchronously inside webTick(), so background polling would add
+         // jitter to the DMX frame gate for no benefit.
+         "setInterval(function(){"
+         "var t=document.querySelector(\"section.tab[data-tab='audio']\");"
+         "if(t&&!t.hidden)refresh();},500);"
+         "refresh();"
+         "})();"
          "</script></body></html>");
   return s;
 }
@@ -571,6 +688,52 @@ static String buildPage() {
 static void handleRoot() {
   LOG_I("[WEB] GET /  client=%s", server.client().remoteIP().toString().c_str());
   server.send(200, "text/html", buildPage());
+}
+
+// Every audio field is clamped, unlike target=button. These govern propane duty, so a
+// bad POST must not be able to widen the safety envelope.
+static uint16_t clampU16(long v, uint16_t lo, uint16_t hi) {
+  if (v < (long)lo) return lo;
+  if (v > (long)hi) return hi;
+  return (uint16_t)v;
+}
+
+static void applyAudioTarget() {
+  if (server.hasArg("audShotMs"))
+    audioConfig.shotMs = clampU16(server.arg("audShotMs").toInt(), AUD_SHOT_MIN, AUD_SHOT_MAX);
+  if (server.hasArg("audMinGapMs"))
+    audioConfig.minGapMs = clampU16(server.arg("audMinGapMs").toInt(), AUD_GAP_MIN, AUD_GAP_MAX);
+  if (server.hasArg("audDutyPct"))
+    audioConfig.dutyPct = (uint8_t)clampU16(server.arg("audDutyPct").toInt(), 0, AUD_DUTY_MAX);
+  if (server.hasArg("audDutyWinMs"))
+    audioConfig.dutyWinMs = clampU16(server.arg("audDutyWinMs").toInt(), AUD_WIN_MIN, AUD_WIN_MAX);
+  if (server.hasArg("audMaxOpenMs"))
+    audioConfig.maxOpenMs = clampU16(server.arg("audMaxOpenMs").toInt(), AUD_MAXOPEN_MIN, AUD_MAXOPEN_MAX);
+  if (server.hasArg("audLeadMs"))
+    audioConfig.leadMs = clampU16(server.arg("audLeadMs").toInt(), 0, AUD_LEAD_MAX);
+  if (server.hasArg("audStaleMs"))
+    audioConfig.staleMs = clampU16(server.arg("audStaleMs").toInt(), AUD_STALE_MIN, AUD_STALE_MAX);
+  if (server.hasArg("audBassOn"))
+    audioConfig.bassOn = (uint8_t)clampU16(server.arg("audBassOn").toInt(), 0, 255);
+  if (server.hasArg("audBassOff"))
+    audioConfig.bassOff = (uint8_t)clampU16(server.arg("audBassOff").toInt(), 0, 255);
+  if (server.hasArg("audBeatMin"))
+    audioConfig.beatMin = (uint8_t)clampU16(server.arg("audBeatMin").toInt(), 0, 255);
+  if (server.hasArg("audDropMin"))
+    audioConfig.dropMin = (uint8_t)clampU16(server.arg("audDropMin").toInt(), 0, 255);
+  if (server.hasArg("audDropGapMs"))
+    audioConfig.dropGapMs = clampU16(server.arg("audDropGapMs").toInt(), AUD_DROPGAP_MIN, AUD_DROPGAP_MAX);
+  if (server.hasArg("audDropShotMs"))
+    audioConfig.dropShotMs = clampU16(server.arg("audDropShotMs").toInt(), AUD_DROPSHOT_MIN, AUD_DROPSHOT_MAX);
+  if (server.hasArg("audLightMode"))
+    audioConfig.lightMode = (uint8_t)clampU16(server.arg("audLightMode").toInt(), 0, 2);
+  if (server.hasArg("audLightDepth"))
+    audioConfig.lightDepth = (uint8_t)clampU16(server.arg("audLightDepth").toInt(), 0, 255);
+
+  // Hysteresis only works if the close threshold sits below the open threshold;
+  // equal values would chatter the valve at the boundary.
+  if (audioConfig.bassOff >= audioConfig.bassOn)
+    audioConfig.bassOff = (audioConfig.bassOn > 8) ? (audioConfig.bassOn - 8) : 0;
 }
 
 static void handleSet() {
@@ -589,7 +752,10 @@ static void handleSet() {
     confluenceConfig.fireLevel = (uint8_t)server.arg("fireLevel").toInt();
 
   } else if (target == "button") {
-    buttonConfig.mode              = (uint8_t)server.arg("mode").toInt();
+    // Clamped: mode now selects propane behaviour (3–6 are audio-driven), so an
+    // out-of-range value is not a cosmetic bug. Unknown values fall back to FIREBALL.
+    uint8_t mode = (uint8_t)server.arg("mode").toInt();
+    buttonConfig.mode              = (mode > AUDIO_MODE_MAX) ? 0 : mode;
     buttonConfig.fireDurationMs    = (uint16_t)server.arg("fireDurationMs").toInt();
     buttonConfig.cooldownMs        = (uint16_t)server.arg("cooldownMs").toInt();
     buttonConfig.machineGunBurstMs = (uint16_t)server.arg("machineGunBurstMs").toInt();
@@ -624,6 +790,9 @@ static void handleSet() {
       towerConfigs[i].speed      = speed;
       towerConfigs[i].flameLevel = flameLevel;
     }
+
+  } else if (target == "audio") {
+    applyAudioTarget();
 
   } else {
     uint8_t idx = (uint8_t)target.toInt();
@@ -660,6 +829,10 @@ static void handleApiRelease() {
 static void handleApiReset() {
   LOG_I("[WEB] POST /api/button/reset");
   buttonInjectReset();
+  // Drop any audio-owned shot too, otherwise audio would still think it holds the
+  // valve and would not re-trigger. Deliberately NOT a disarm: the test suite resets
+  // between every test and would otherwise have to re-arm each time.
+  audioAbortShot();
   server.send(200);
 }
 
@@ -674,6 +847,21 @@ static void handleApiPurgeStart() {
 static void handleApiPurgeStop() {
   LOG_I("[WEB] POST /api/purge/stop");
   purgeStop();
+  server.send(200);
+}
+
+// Audio arming. A latch, not a hold — unlike the fire and purge buttons there is no
+// release timer here, so STALENESS is the dead-man: no fresh packets means no fire
+// regardless of this flag. RAM-only, false on every boot.
+static void handleApiAudioArm() {
+  LOG_I("[WEB] POST /api/audio/arm");
+  audioArm();
+  server.send(200);
+}
+
+static void handleApiAudioDisarm() {
+  LOG_I("[WEB] POST /api/audio/disarm");
+  audioDisarm();
   server.send(200);
 }
 
@@ -752,7 +940,7 @@ static void handleWindowsConnectTest() {
 
 static void handleApiState() {
   String s;
-  s.reserve(2048);
+  s.reserve(3072);  // grown by the audio block; exceeding this reallocs on a fragmenting heap
   s += '{';
 
   s += F("\"boot_id\":\"");
@@ -807,6 +995,86 @@ static void handleApiState() {
   s += F(",\"fireLevel\":");
   s += confluenceConfig.fireLevel;
   s += '}';
+
+  // Audio block sits BEFORE the dmx block so the "]}}" terminator at the end of
+  // this function stays untouched.
+  {
+    const AudioFeatures& a = audioSnapshot();
+    uint32_t age = audioAgeMs();
+    s += F(",\"audio\":{\"armed\":");
+    s += (audioArmed() ? F("true") : F("false"));
+    s += F(",\"fresh\":");
+    s += (audioFresh() ? F("true") : F("false"));
+    s += F(",\"peer\":\"");
+    s += audioPeer().toString();
+    s += F("\",\"port\":");
+    s += AUDIO_UDP_PORT;
+    s += F(",\"ageMs\":");
+    s += (age == UINT32_MAX) ? -1 : (long)age;   // -1 = never heard from
+    s += F(",\"pps\":");
+    s += audioPps();
+    s += F(",\"packets\":");
+    s += audioPackets();
+    s += F(",\"gaps\":");
+    s += audioSeqGaps();
+    s += F(",\"bad\":");
+    s += audioBadPackets();
+    s += F(",\"floods\":");
+    s += audioFloodTicks();
+    s += F(",\"bass\":");
+    s += a.bass;
+    s += F(",\"mid\":");
+    s += a.mid;
+    s += F(",\"treble\":");
+    s += a.treble;
+    s += F(",\"level\":");
+    s += a.level;
+    s += F(",\"bpm\":");
+    s += a.bpm;
+    s += F(",\"beatMs\":");
+    s += a.beatIntervalMs;
+    s += F(",\"beat\":");
+    s += (audioBeatRecent(120) ? F("true") : F("false"));
+    s += F(",\"confident\":");
+    s += (audioBeatGridConfident() ? F("true") : F("false"));
+    s += F(",\"shotActive\":");
+    s += (audioShotActive() ? F("true") : F("false"));
+    s += F(",\"dutyUsedMs\":");
+    s += audioDutyUsedMs();
+    s += F(",\"dutyCapMs\":");
+    s += audioDutyCapMs();
+    s += F(",\"cfg\":{\"shotMs\":");
+    s += audioConfig.shotMs;
+    s += F(",\"minGapMs\":");
+    s += audioConfig.minGapMs;
+    s += F(",\"dutyPct\":");
+    s += audioConfig.dutyPct;
+    s += F(",\"dutyWinMs\":");
+    s += audioConfig.dutyWinMs;
+    s += F(",\"maxOpenMs\":");
+    s += audioConfig.maxOpenMs;
+    s += F(",\"leadMs\":");
+    s += audioConfig.leadMs;
+    s += F(",\"staleMs\":");
+    s += audioConfig.staleMs;
+    s += F(",\"bassOn\":");
+    s += audioConfig.bassOn;
+    s += F(",\"bassOff\":");
+    s += audioConfig.bassOff;
+    s += F(",\"beatMin\":");
+    s += audioConfig.beatMin;
+    s += F(",\"dropMin\":");
+    s += audioConfig.dropMin;
+    s += F(",\"dropGapMs\":");
+    s += audioConfig.dropGapMs;
+    s += F(",\"dropShotMs\":");
+    s += audioConfig.dropShotMs;
+    s += F(",\"lightMode\":");
+    s += audioConfig.lightMode;
+    s += F(",\"lightDepth\":");
+    s += audioConfig.lightDepth;
+    s += F("}}");
+  }
 
   s += F(",\"towers\":[");
   for (uint8_t i = 0; i < NUM_TOWERS; i++) {
@@ -883,6 +1151,10 @@ void webSetup() {
   server.on("/api/button/reset",     HTTP_POST, handleApiReset);
   server.on("/api/purge/start",      HTTP_POST, handleApiPurgeStart);
   server.on("/api/purge/stop",       HTTP_POST, handleApiPurgeStop);
+  // Registered explicitly as HTTP_POST: onNotFound 302s unknown routes to "/", so a
+  // typo'd or unregistered path would look like success to fetch() rather than 404.
+  server.on("/api/audio/arm",        HTTP_POST, handleApiAudioArm);
+  server.on("/api/audio/disarm",     HTTP_POST, handleApiAudioDisarm);
   server.on("/api/morse",            HTTP_POST, handleApiMorse);
   server.on("/api/morse/stop",       HTTP_POST, handleApiMorseStop);
   server.on("/api/captive/dismiss",  HTTP_POST, handleApiCaptiveDismiss);

@@ -2,6 +2,7 @@
 #include "towers.h"
 #include "confluence.h"
 #include "button_fsm.h"
+#include "audio.h"
 #include "storage.h"
 
 static Preferences prefs;
@@ -47,6 +48,27 @@ void storageLoad() {
   buttonConfig.fireUpB = prefs.getUChar("fireupb", 0);
   buttonConfig.fireUpW = prefs.getUChar("fireupw", 0);
 
+  // mode now selects propane behaviour (3–6 are audio-driven), so an out-of-range
+  // value from an older build or a bad POST must not survive a reboot.
+  if (buttonConfig.mode > AUDIO_MODE_MAX) buttonConfig.mode = 0;
+
+  // Audio node. `armed` is deliberately absent — it is RAM-only and false every boot.
+  audioConfig.shotMs     = prefs.getUShort("audshot",     150);
+  audioConfig.minGapMs   = prefs.getUShort("audgap",      200);
+  audioConfig.dutyPct    = prefs.getUChar("audduty",      40);
+  audioConfig.dutyWinMs  = prefs.getUShort("audwin",      10000);
+  audioConfig.maxOpenMs  = prefs.getUShort("audmaxopen",  1000);
+  audioConfig.leadMs     = prefs.getUShort("audlead",     120);
+  audioConfig.staleMs    = prefs.getUShort("audstale",    500);
+  audioConfig.bassOn     = prefs.getUChar("audbasson",    170);
+  audioConfig.bassOff    = prefs.getUChar("audbassoff",   140);
+  audioConfig.beatMin    = prefs.getUChar("audbeatmin",   90);
+  audioConfig.dropMin    = prefs.getUChar("auddropmin",   200);
+  audioConfig.dropGapMs  = prefs.getUShort("auddropgap",  3000);
+  audioConfig.dropShotMs = prefs.getUShort("auddropshot", 400);
+  audioConfig.lightMode  = prefs.getUChar("audlmode",     1);
+  audioConfig.lightDepth = prefs.getUChar("audldepth",    150);
+
   prefs.end();
 }
 
@@ -86,6 +108,22 @@ void storageSave() {
   prefs.putUChar("fireupg", buttonConfig.fireUpG);
   prefs.putUChar("fireupb", buttonConfig.fireUpB);
   prefs.putUChar("fireupw", buttonConfig.fireUpW);
+
+  prefs.putUShort("audshot",     audioConfig.shotMs);
+  prefs.putUShort("audgap",      audioConfig.minGapMs);
+  prefs.putUChar("audduty",      audioConfig.dutyPct);
+  prefs.putUShort("audwin",      audioConfig.dutyWinMs);
+  prefs.putUShort("audmaxopen",  audioConfig.maxOpenMs);
+  prefs.putUShort("audlead",     audioConfig.leadMs);
+  prefs.putUShort("audstale",    audioConfig.staleMs);
+  prefs.putUChar("audbasson",    audioConfig.bassOn);
+  prefs.putUChar("audbassoff",   audioConfig.bassOff);
+  prefs.putUChar("audbeatmin",   audioConfig.beatMin);
+  prefs.putUChar("auddropmin",   audioConfig.dropMin);
+  prefs.putUShort("auddropgap",  audioConfig.dropGapMs);
+  prefs.putUShort("auddropshot", audioConfig.dropShotMs);
+  prefs.putUChar("audlmode",     audioConfig.lightMode);
+  prefs.putUChar("audldepth",    audioConfig.lightDepth);
 
   prefs.end();
 }

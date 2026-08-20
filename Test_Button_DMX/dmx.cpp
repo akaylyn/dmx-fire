@@ -1,8 +1,9 @@
 #include <Arduino.h>
+#include "board_config.h"
 #include "dmx.h"
 
-static const uint8_t  RX_PIN = 1;
-static const uint8_t  TX_PIN = 2;
+static const uint8_t  RX_PIN = DMX_RX_PIN;   // Port A — see board_config.h
+static const uint8_t  TX_PIN = DMX_TX_PIN;
 
 // DMX512 line rate: 250 kbaud, 8 data bits, no parity, 2 stop bits.
 static const uint32_t DMX_BAUD   = 250000;

@@ -169,6 +169,22 @@ class Client:
 
     # ---- DMX transmitter quiet mode ----
 
+    # ---- morse ----
+
+    def morse(self, text: str, unitMs: int | None = None) -> None:
+        """Start Morse playback on the Confluence solenoid (CH1).
+
+        Bypasses the FSM entirely, like purge does. unitMs is clamped to
+        50..2000 on the device; values outside that leave the current setting.
+        """
+        data: dict[str, Any] = {"text": text}
+        if unitMs is not None:
+            data["unitMs"] = unitMs
+        self._post("/api/morse", data=data)
+
+    def morse_stop(self) -> None:
+        self._post("/api/morse/stop")
+
     def dmx_quiet_start(self) -> _Resp:
         """POST /api/dmx/quiet/start, returning the response WITHOUT raising.
 
@@ -214,10 +230,19 @@ class Client:
 
     # ---- configuration (form-urlencoded /set) ----
 
-    def set_confluence(self, *, connected: bool, fireLevel: int) -> None:
-        data: dict[str, Any] = {"target": "confluence", "fireLevel": fireLevel}
+    def set_confluence(self, *, connected: bool, fireEnabled: bool = True) -> None:
+        """Configure the central solenoid.
+
+        `fireEnabled` defaults to True on purpose. Both flags are checkboxes on
+        the device: handleSet() reads them with hasArg(), so a field this client
+        omits is read as OFF. A caller that just wanted to toggle `connected`
+        would otherwise silently disable propane.
+        """
+        data: dict[str, Any] = {"target": "confluence"}
         if connected:
             data["connected"] = "on"
+        if fireEnabled:
+            data["fireEnabled"] = "on"
         self._post("/set", data=data)
 
     def set_button(
@@ -258,9 +283,15 @@ class Client:
         *,
         theme: str,
         brightness: int,
-        flameLevel: int,
         speed: int = 100,
     ) -> None:
+        """Apply-to-All covers the look only.
+
+        There is deliberately no fireEnabled here, for the same reason there is
+        no `connected`: an unchecked box submits nothing, so one Apply-to-All
+        would clear the flag on all four towers at once. Use set_tower() to
+        change a tower's propane isolation.
+        """
         self._post(
             "/set",
             data={
@@ -268,7 +299,6 @@ class Client:
                 "theme": theme,
                 "brightness": brightness,
                 "speed": speed,
-                "flameLevel": flameLevel,
             },
         )
 
@@ -279,18 +309,25 @@ class Client:
         connected: bool,
         theme: str,
         brightness: int,
-        flameLevel: int,
         speed: int = 100,
+        fireEnabled: bool = True,
     ) -> None:
+        """Configure one tower.
+
+        `fireEnabled` defaults to True for the same reason as in
+        set_confluence(): it is a checkbox, absent means off, and a caller that
+        did not mention propane should not end up disabling it.
+        """
         data: dict[str, Any] = {
             "target": str(index),
             "theme": theme,
             "brightness": brightness,
             "speed": speed,
-            "flameLevel": flameLevel,
         }
         if connected:
             data["connected"] = "on"
+        if fireEnabled:
+            data["fireEnabled"] = "on"
         self._post("/set", data=data)
 
     # ---- helpers ----

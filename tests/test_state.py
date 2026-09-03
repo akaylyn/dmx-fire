@@ -25,16 +25,18 @@ def test_state_shape(device):
 
     conf = s["confluence"]
     assert isinstance(conf["connected"], bool)
-    assert 0 <= conf["fireLevel"] <= 255
+    assert isinstance(conf["fireEnabled"], bool)
+    assert "fireLevel" not in conf, "the solenoid has no level — see spec-solenoid-binary.md"
 
     towers = s["towers"]
     assert len(towers) == 4
     for t in towers:
         assert isinstance(t["connected"], bool)
+        assert isinstance(t["fireEnabled"], bool)
+        assert "flameLevel" not in t, "the valve has no level — see spec-solenoid-binary.md"
         assert t["theme"] in VALID_THEMES
         assert 0 <= t["brightness"] <= 255
         assert 10 <= t["speed"] <= 400
-        assert 0 <= t["flameLevel"] <= 255
 
     dmx = s["dmx"]
     assert "ch" in dmx and len(dmx["ch"]) == 64
@@ -52,10 +54,10 @@ def test_baseline_applied(device):
     assert s["button"]["endCueMs"] == 1000
     assert s["fireUplight"] == {"r": 255, "g": 110, "b": 0, "w": 0}
     assert s["confluence"]["connected"] is True
-    assert s["confluence"]["fireLevel"] == 255
+    assert s["confluence"]["fireEnabled"] is True
     for t in s["towers"]:
         assert t["connected"] is True
+        assert t["fireEnabled"] is True
         assert t["theme"] == "green"
         assert t["brightness"] == 128
         assert t["speed"] == 100
-        assert t["flameLevel"] == 255

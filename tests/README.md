@@ -42,16 +42,17 @@ pytest tests/test_party_mode.py -v
 | File | What it tests |
 |---|---|
 | `test_state.py` | `/api/state` shape, defaults, uptime |
-| `test_config_per_tower.py` | Per-tower theme / brightness / speed / flameLevel / connected round-trip |
+| `test_config_per_tower.py` | Per-tower theme / brightness / speed / fireEnabled / connected round-trip |
 | `test_config_all_towers.py` | `target=all` applies to every tower |
-| `test_config_confluence.py` | Confluence connected toggle + fireLevel |
+| `test_config_confluence.py` | Confluence connected + fireEnabled toggles |
 | `test_config_button.py` | mode / fireDurationMs / cooldownMs / endCuePattern |
 | `test_storage.py` | Config writes survive read-back via `/api/state` |
 | `test_fsm_transitions.py` | IDLE → FIRE_ACTIVE → END_CUE → COOLDOWN → IDLE via API |
 | `test_fireball_mode.py` | mode=0 — release before duration: fire continues |
 | `test_party_mode.py` | mode=1 — release before duration: fire ends early |
 | `test_cooldown_lockout.py` | Press during COOLDOWN is ignored |
-| `test_dmx_output.py` | DMX channels reflect config (connected, flameLevel, fireLevel) |
+| `test_dmx_output.py` | DMX channels reflect config (connected, fireEnabled) |
+| `test_valve_binary.py` | Valve channels are 0 or 255 only, under every fire source |
 
 ## Notes
 

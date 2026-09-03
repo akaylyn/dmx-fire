@@ -13,21 +13,16 @@ Uplights run in 4-channel mode (R/G/B/W), so each tower claims 8 of its
 
 import time
 
-# DMX is 1-indexed; dmx.ch is 0-indexed (dmx.ch[0] = DMX ch 1).
-CONFLUENCE_FIRE_CH = 1
-
-# Fire valve channel per tower (decoder CH4).
-TOWER_FIRE_CH = [8, 23, 38, 53]
-
-# Uplight block start per tower; the 4 channels are R, G, B, W.
-TOWER_UPLIGHT_CH = [9, 24, 39, 54]
+from valves import (  # noqa: F401 — TOWER_UPLIGHT_CH re-exported for readability
+    CONFLUENCE_FIRE_CH,
+    TOWER_FIRE_CH,
+    TOWER_UPLIGHT_CH,
+    VALVE_OPEN,
+    ch,
+)
 
 # Channels no fixture listens on — must be held at 0.
 UNCLAIMED_CH = [4] + [c for base in (4, 19, 34, 49) for c in range(base + 9, base + 16)]
-
-
-def ch(state, dmx_ch):
-    return state["dmx"]["ch"][dmx_ch - 1]
 
 
 def test_idle_no_fire(device):
@@ -39,34 +34,35 @@ def test_idle_no_fire(device):
 
 
 def test_fire_active_drives_confluence(device):
-    device.set_confluence(connected=True, fireLevel=200)
+    device.set_confluence(connected=True, fireEnabled=True)
     device.set_button(mode=0, fireDurationMs=2000, cooldownMs=2000)
     device.press()
     device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
     # Wait one DMX frame (50 Hz = 20 ms).
     time.sleep(0.1)
     s = device.get_state()
-    assert ch(s, CONFLUENCE_FIRE_CH) == 200, (
-        f"confluence ch 1 should equal fireLevel during FIRE_ACTIVE, got {ch(s, CONFLUENCE_FIRE_CH)}"
+    assert ch(s, CONFLUENCE_FIRE_CH) == VALVE_OPEN, (
+        f"confluence ch 1 should be fully open during FIRE_ACTIVE, got {ch(s, CONFLUENCE_FIRE_CH)}"
     )
 
 
 def test_fire_active_drives_tower_flame(device):
     for i in range(4):
-        device.set_tower(i, connected=True, theme="green", brightness=128, flameLevel=180)
+        device.set_tower(i, connected=True, theme="green", brightness=128)
     device.set_button(mode=0, fireDurationMs=2000, cooldownMs=2000)
     device.press()
     device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
     time.sleep(0.1)
     s = device.get_state()
     for i, dmx_ch in enumerate(TOWER_FIRE_CH):
-        assert ch(s, dmx_ch) == 180, (
-            f"tower {i} fire valve (ch {dmx_ch}) should equal flameLevel=180 during FIRE_ACTIVE, got {ch(s, dmx_ch)}"
+        assert ch(s, dmx_ch) == VALVE_OPEN, (
+            f"tower {i} fire valve (ch {dmx_ch}) should be fully open during FIRE_ACTIVE, "
+            f"got {ch(s, dmx_ch)}"
         )
 
 
 def test_disconnected_confluence_stays_zero(device):
-    device.set_confluence(connected=False, fireLevel=255)
+    device.set_confluence(connected=False, fireEnabled=True)
     device.set_button(mode=0, fireDurationMs=1000, cooldownMs=2000)
     device.press()
     device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
@@ -87,7 +83,7 @@ def test_uplight_is_four_channel_rgbw(device):
     gradients blank for 3200 ms of every 4000 ms cycle).
     """
     device.reset()
-    device.set_all_towers(theme="bright_white", brightness=200, flameLevel=0)
+    device.set_all_towers(theme="bright_white", brightness=200)
     time.sleep(0.1)
     s = device.get_state()
     strip_expected = 200 * 75 // 100  # STRIP_BRIGHTNESS_PCT in towers.cpp
@@ -110,7 +106,7 @@ def test_unclaimed_channels_stay_zero(device):
     worth guarding against.
     """
     device.reset()
-    device.set_all_towers(theme="bright_white", brightness=255, flameLevel=255)
+    device.set_all_towers(theme="bright_white", brightness=255)
     time.sleep(0.1)
     s = device.get_state()
     nonzero = {c: ch(s, c) for c in UNCLAIMED_CH if ch(s, c) != 0}
@@ -126,7 +122,7 @@ def test_uplight_shows_fire_look_while_firing(device):
     """
     device.reset()
     device.set_fire_uplight(r=255, g=110, b=0, w=0)
-    device.set_all_towers(theme="green", brightness=128, flameLevel=200)
+    device.set_all_towers(theme="green", brightness=128)
     device.set_button(mode=0, fireDurationMs=3000, cooldownMs=2000)
     device.press()
     device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
@@ -153,7 +149,7 @@ def test_fire_look_does_not_touch_strips(device):
     device.reset()
     device.set_fire_uplight(r=255, g=110, b=0, w=0)
     # bright_white renders continuously, so the strips have a stable expected value.
-    device.set_all_towers(theme="bright_white", brightness=200, flameLevel=200)
+    device.set_all_towers(theme="bright_white", brightness=200)
     device.set_button(mode=0, fireDurationMs=2000, cooldownMs=2000)
     device.press()
     device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
@@ -176,7 +172,7 @@ def test_uplight_returns_to_theme_after_fire(device):
     """Once the valve closes the uplight goes back to the theme."""
     device.reset()
     device.set_fire_uplight(r=255, g=110, b=0, w=0)
-    device.set_all_towers(theme="bright_white", brightness=200, flameLevel=200)
+    device.set_all_towers(theme="bright_white", brightness=200)
     device.set_button(mode=0, fireDurationMs=300, cooldownMs=2000, endCueMs=0)
     device.press()
     device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
@@ -195,16 +191,16 @@ def test_purge_lights_uplights_and_opens_all_valves(device):
     """Purge holds every valve open, so it must light the uplights too."""
     device.reset()
     device.set_fire_uplight(r=0, g=255, b=136, w=64)
-    device.set_confluence(connected=True, fireLevel=255)
-    device.set_all_towers(theme="green", brightness=128, flameLevel=200)
+    device.set_confluence(connected=True, fireEnabled=True)
+    device.set_all_towers(theme="green", brightness=128)
     device.purge_start()
     try:
         time.sleep(0.2)
         s = device.get_state()
         assert s["purge"] is True
-        assert ch(s, CONFLUENCE_FIRE_CH) == 255
+        assert ch(s, CONFLUENCE_FIRE_CH) == VALVE_OPEN
         for i, fire_ch in enumerate(TOWER_FIRE_CH):
-            assert ch(s, fire_ch) == 200, f"tower {i} valve should be open during purge"
+            assert ch(s, fire_ch) == VALVE_OPEN, f"tower {i} valve should be open during purge"
         for i, up in enumerate(TOWER_UPLIGHT_CH):
             vals = tuple(ch(s, up + n) for n in range(4))
             assert vals == (0, 255, 136, 64), (
@@ -221,8 +217,8 @@ def test_machine_gun_pulses_tower_valves(device):
     Confluence pulsed. Both must now drop to 0 during a burst's off-phase.
     """
     device.reset()
-    device.set_confluence(connected=True, fireLevel=255)
-    device.set_all_towers(theme="green", brightness=128, flameLevel=200)
+    device.set_confluence(connected=True, fireEnabled=True)
+    device.set_all_towers(theme="green", brightness=128)
     device.set_button(
         mode=2, fireDurationMs=3000, cooldownMs=2000, endCueMs=0, machineGunBurstMs=100
     )
@@ -240,35 +236,38 @@ def test_machine_gun_pulses_tower_valves(device):
         time.sleep(0.03)
     device.release()
 
-    assert {0, 200} <= tower_vals, (
-        f"tower valve should pulse between 0 and flameLevel in MACHINE_GUN, saw {sorted(tower_vals)}"
+    # Both bytes, and ONLY those bytes: the burst gates time, not amplitude.
+    assert tower_vals == {0, VALVE_OPEN}, (
+        f"tower valve should pulse between exactly 0 and 255 in MACHINE_GUN, saw {sorted(tower_vals)}"
     )
-    assert {0, 255} <= cf_vals, (
-        f"confluence should pulse between 0 and fireLevel in MACHINE_GUN, saw {sorted(cf_vals)}"
+    assert cf_vals == {0, VALVE_OPEN}, (
+        f"confluence should pulse between exactly 0 and 255 in MACHINE_GUN, saw {sorted(cf_vals)}"
     )
 
 
 def test_disconnected_tower_skipped(device):
     """A disconnected tower should not have its channels written during FIRE_ACTIVE.
 
-    The firmware skips disconnected towers (towerConfigs[i].connected == false) so
-    their DMX channels retain whatever value was last written (zero from boot, or
-    a previous run). After a reset to IDLE we expect them to read 0.
+    The firmware skips a disconnected tower's lighting channels entirely, so they
+    retain whatever was last written. Its VALVE is the exception: that is closed
+    explicitly on the way past, because a channel that stops being written holds
+    its last byte, and for a solenoid that means latched open.
+    See docs/spec-solenoid-binary.md.
     """
     device.reset()
     # Tower 1 disconnected, others connected.
-    device.set_tower(0, connected=True, theme="green", brightness=128, flameLevel=200)
-    device.set_tower(1, connected=False, theme="green", brightness=128, flameLevel=200)
-    device.set_tower(2, connected=True, theme="green", brightness=128, flameLevel=200)
-    device.set_tower(3, connected=True, theme="green", brightness=128, flameLevel=200)
+    device.set_tower(0, connected=True, theme="green", brightness=128)
+    device.set_tower(1, connected=False, theme="green", brightness=128)
+    device.set_tower(2, connected=True, theme="green", brightness=128)
+    device.set_tower(3, connected=True, theme="green", brightness=128)
     device.set_button(mode=0, fireDurationMs=1500, cooldownMs=2000)
     device.press()
     device.wait_for_state("FIRE_ACTIVE", timeout=1.0)
     time.sleep(0.1)
     s = device.get_state()
-    # Connected towers should reflect flameLevel.
-    assert ch(s, TOWER_FIRE_CH[0]) == 200
-    assert ch(s, TOWER_FIRE_CH[2]) == 200
-    assert ch(s, TOWER_FIRE_CH[3]) == 200
-    # Disconnected tower 1 should NOT have been overwritten with flameLevel.
-    assert ch(s, TOWER_FIRE_CH[1]) != 200
+    # Connected towers open fully.
+    assert ch(s, TOWER_FIRE_CH[0]) == VALVE_OPEN
+    assert ch(s, TOWER_FIRE_CH[2]) == VALVE_OPEN
+    assert ch(s, TOWER_FIRE_CH[3]) == VALVE_OPEN
+    # Disconnected tower 1's valve is driven shut, not merely left alone.
+    assert ch(s, TOWER_FIRE_CH[1]) == 0

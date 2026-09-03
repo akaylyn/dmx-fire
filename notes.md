@@ -1,6 +1,6 @@
 # Field Debugging Notes — DMX Noise / Spurious Solenoid Firing
 
-_Session dates: 2026-07-17 → 2026-07-20, continued 2026-07-29, 2026-08-04 and 2026-08-19. Captured from the live field-debug conversations._
+_Session dates: 2026-07-17 → 2026-07-20, continued 2026-07-29, 2026-08-04, 2026-08-19 and 2026-09-02. Captured from the live field-debug conversations._
 
 ---
 
@@ -115,6 +115,10 @@ but **manual** firing will leave CH1 at 0 and only the four tower valves respond
 ---
 
 ## ⚠⚠ SESSION 5 (2026-08-19) — "Tower 1 is dead" was a TEST FIXTURE, not hardware
+
+> **The same symptom had a different cause in Session 6 (2026-09-02):** a cable that passed a
+> pin-by-pin tester, with a completely clean config. Check both — and read Session 6's extension of
+> the standing rule before trusting a neighbouring fixture as proof of signal.
 
 **Read this before diagnosing any dead fixture again.** Tower 1's accumulator decoder was
 reported dead — strips unlit, solenoid silent — while its uplight worked and towers 0/2/3 were
@@ -240,6 +244,493 @@ CH1/8/23/38/53 plus the frame counters — which turned out never to have been d
 Nothing here overturns Session 3's ground-reference root cause — that was a genuine, separate,
 electrical fault with its own evidence. This is a second, independent failure mode layered on
 top of it that mimicked it.
+
+---
+
+## ⚠⚠ SESSION 6 (2026-09-02) — Tower 1 again; the cable was NOT the root cause — the decoder was
+
+> ## ⚠⚠⚠ CORRECTION (2026-09-02, from the operator — read this before the section below)
+>
+> **The root cause was the DMX decoder, not the cable.** The operator replaced the tower 1
+> decoder and that is what fixed it. The cable swap recorded below did not resolve the fault.
+>
+> Everything in this section written as "the cable was the fault" is **wrong**, and the
+> reasoning built on it — the three mechanisms for why a bad cable spares some fixtures, the
+> "a cable that passes a tester is not exonerated" conclusion, the inference that
+> `docs/hardware.md`'s topology must be wrong — is reasoning from a false premise. The
+> *measurements* below are still good and still worth reading; the *diagnosis* is not.
+>
+> **What actually holds up:**
+> - The transmit side was provably healthy (CH20–23 carried correct animating data), so the
+>   fault was downstream of the controller. That much was right and is what mattered.
+> - Session 5's rule held: confirming the controller is sending is necessary, not sufficient.
+> - The decoder's `- - -` display check is still the right first move — and had it been done,
+>   it would have pointed at the decoder immediately.
+>
+> **The standing lesson is the opposite of the one drawn below.** Not "a cable that passes a
+> tester is still suspect" — but: *swapping a part and seeing the symptom clear does not
+> establish that part was the fault, if other things changed too.* Two components were
+> touched here across the session and the first swap got the credit.
+>
+> This is now the **third** time tower 1 has been diagnosed wrong (Session 2/3: electrical;
+> Session 5: a config flag; Session 6: a cable) before the real cause was found. Every one of
+> those had confident supporting evidence at the time.
+>
+> **The "Open questions" list at the end of this section is affected.** The cable items
+> ("which cable was replaced", "meter it for pin 1/shield before binning it") are no longer
+> chasing a known fault — though metering it is still cheap, and if that cable *does* turn out
+> defective it would mean two faults were present at once, which is worth knowing. The
+> `docs/hardware.md` topology item was raised only because the cable diagnosis implied the
+> drawn chain was wrong; with the decoder as the cause, that inference no longer stands and
+> the diagram is neither confirmed nor refuted. The `ota.sh` fallback item is **done** —
+> see Session 7.
+
+**The section below is retained as written, for its measurements and its ruling-out work.
+Its conclusion is superseded by the correction above.**
+
+
+**Read this together with Session 5.** The presenting symptom was identical, down to the detail:
+tower 1's accumulator decoder inert (strips unlit, valve silent), **its uplight running the theme
+normally**, towers 0/2/3 fine, and a manual DMX console driving the decoder perfectly at ch 20.
+
+Session 5's answer was `connected=false` in NVS. **This time the config was clean and the fault was
+physical.** The operator replaced a cable and the tower came straight back. That cable had **passed
+a pin-by-pin cable tester** — the second time in this rig's history a cable test has given false
+confidence.
+
+### What it was NOT — ruled out by measurement before touching hardware
+
+| Ruled out | Evidence |
+|---|---|
+| Session 5's config fault recurring | `scripts/towers.sh`: all four towers `connected=true`, brightness 192, flameLevel 255; Confluence connected, fireLevel 255. No blanking config anywhere. |
+| Firmware not composing the bytes | CH20–23 carried live animating theme data (e.g. `74/95/0/0`) every sample. `74/99 = 0.747` — exactly the 75 % `STRIP_BRIGHTNESS_PCT` cap against the uplight's `99`, so the value was provably correct by construction, not a coincidence. |
+| Firmware composing but not sending | `dmxUpdate()` writes `dmxLastFrame` to the UART itself — the same buffer `/api/state` reports. For slots 1–64 there is no shadow-vs-wire divergence possible. |
+| Wrong address | Decoder confirmed set to **A020**, and the console driving **ch 20 specifically** controlled it. |
+| Frame length | Was briefly the leading theory. Wrong, and backwards: `notes.md` already records that lengthening 64 → 128 slots is **what killed this same fixture** in the first place (reverted 2026-08-05). |
+
+### The part worth remembering: a bad cable did NOT kill the whole downstream chain
+
+Tower 1's decoder was stone dead while its **uplight kept running the theme correctly**, and towers
+2 and 3 downstream were unaffected. A single fixture went dark and everything around it carried on.
+
+**Do not turn this into a hop-count rule.** "It only affects one node downstream" is not established
+and probably is not consistent. A partially-faulted cable does not fail cleanly — it produces a
+*degraded* signal, and whether any given fixture still works depends on **that fixture's receiver
+and its grounding**, not on how far down the run it sits. Three mechanisms produce this pattern, and
+we have not yet established which one was in play here:
+
+1. **It isn't actually a chain at that point (spur / star tap).** If the decoder hangs off a tap
+   rather than sitting in-line, its cable carries data to nothing else, so nothing else can notice
+   it fail. Simplest explanation, and it would mean the daisy chain drawn in
+   [docs/hardware.md](docs/hardware.md) does not match the field.
+2. **Pin 1 / shield broken while pins 2–3 stayed continuous.** This ties straight to **Session 3's
+   confirmed root cause** — the M5 Unit DMX is galvanically isolated and cannot reference the bus,
+   so the reference has to come from the fixture end. Lose pin 1 on one leg and the fixtures past it
+   are left floating. A mains-earthed fixture (the LL960S uplight is a 500 W earthed unit)
+   self-references and rides it out; a decoder on a floating low-voltage DC supply does not. This
+   mechanism is **fixture-dependent, not position-dependent** — which is exactly what we saw.
+3. **A marginal conductor and differing receiver tolerance.** Series resistance from a cold joint or
+   part-severed strands slew-limits the edges. RS-485 receivers differ in hysteresis and sampling
+   margin, so a tolerant fixture decodes the same degraded waveform that a strict one rejects.
+
+Mechanisms 2 and 3 both predict "some fixtures survive, some don't" **with no relationship to
+downstream order**. So the usable rule is not about hops:
+
+> One fixture dark, its immediate neighbours fine, and a console that drives it correctly = suspect
+> the cable segment feeding **that fixture**, and swap it. Do not try to reason about who is
+> downstream of whom — bypass the cable and observe.
+
+### Why the cable tester passed a cable that was dead
+
+A pin tester checks DC continuity and pin mapping at a few volts and about a milliamp. DMX is
+250 kbaud differential signalling on a nominally 110 Ω line. **Nothing in a continuity test
+exercises rise time, impedance, or the shield.** Specifically:
+
+- Cold joints and part-severed strands conduct fine at 1 mA and collapse under signal edges.
+- Intermittents that only open under flex or tension read perfect on a bench where the cable is
+  lying still.
+- Mic cable (~50–75 Ω, high capacitance) substituted for 110 Ω DMX cable passes every continuity
+  check and reflects badly at 250 kbaud.
+- Many testers do not meaningfully test **pin 1 / shield** — see mechanism 2 above, where pin 1 is
+  the whole fault.
+
+**A cable that passes a tester is not exonerated.** Swapping it is the test; the tester is not.
+
+### Correction to a conclusion drawn earlier in this session
+
+Mid-session it was argued that the decoder *must* be receiving our frames, because the uplight drawn
+**downstream of it** in [docs/hardware.md](docs/hardware.md) (`controller → … → T1 decoder → T1
+uplight → T2 decoder → …`) was working normally. The cable fix disproves that. Either the wiring is
+not the chain that document draws, or the decoder's feed is a separate leg from the uplight's.
+**The topology diagram in `docs/hardware.md` should be treated as unverified until someone traces
+the actual cables.**
+
+### The ten-second check that would have split this open immediately
+
+Per [docs/manuals/dmx512-decoder.md](docs/manuals/dmx512-decoder.md), the accumulator decoders show
+**`- - -` on the display when no DMX signal is being received.**
+
+That single reading separates *"not receiving"* from *"receiving and ignoring"* — the exact fork that
+consumed this session and Session 5 both. **Look at the decoder's display before theorising.**
+
+### Standing rule — extended
+
+> Session 5: **Before diagnosing a dead fixture as hardware, confirm the controller is actually
+> sending bytes to it.**
+>
+> Session 6: **That is necessary but NOT sufficient.** Confirm *that fixture* is receiving them —
+> its own display, or a sniffer at the fixture. **A neighbouring fixture working is not proof the
+> signal reaches this one**, no matter what the topology diagram says.
+
+### Also done this session
+
+- **The device was three commits behind.** It was running `9f89f10` (audio-reactive): `/api/state`
+  returned no `dmx.quiet` key, so Session 5's fixes — the live-syncing web UI, DMX quiet mode and
+  valve-channel logging — **had never been flashed**. The operator was still looking at the old
+  server-rendered UI that Session 5 caught lying. OTA'd to HEAD `6524257` this session; NVS config
+  survived, as designed.
+- **`curl` cannot talk to this device right now; raw sockets can.** Every variant (HTTP/1.0, 1.1,
+  `Connection: close`, stripped `Accept`/`User-Agent`) returns an empty body, while a plain socket
+  and `nc` return valid JSON, and ping is 0 % loss. `scripts/towers.sh` and `scripts/debug.sh`
+  already carry an `nc` fallback for this; **`scripts/ota.sh` does not, and its single un-retried
+  `curl` pre-check blocks the upload entirely.** Worked around with a raw-socket multipart POST.
+- **`fireDurationMs` was found at 60 ms**, i.e. barely one 50 ms DMX frame — a valve pulse far too
+  short to produce visible flame, on every tower at once. It caps `FIRE_ACTIVE` in *every* mode
+  ([button_fsm.cpp:81](Test_Button_DMX/button_fsm.cpp#L81)), so holding the button does not extend
+  it. Same class of trap as the `fireDurationMs=10` found in Session 5. The operator raised it and
+  confirmed the valves are audibly opening, and will tune flame size in the field.
+
+### Open questions
+
+- [ ] **Which cable was replaced, and where in the run?** Not recorded. This is what separates
+      mechanism 1 (spur) from mechanisms 2/3 (degraded in-line signal) — and they imply different
+      fixes for the rest of the rig.
+- [ ] **Keep the bad cable and meter it — do not bin it.** It is the only physical evidence. Check
+      **pin 1 / shield continuity** specifically, and flex it while metering. If pin 1 is the fault,
+      that is Session 3's root cause resurfacing as a cable defect, and the rest of the run should be
+      checked the same way.
+- [ ] Trace the actual cabling at tower 1 and correct `docs/hardware.md` if it is not the drawn chain.
+- [ ] Give `scripts/ota.sh` the same `nc`/raw-socket fallback `towers.sh` and `debug.sh` have.
+- [ ] Re-check whether any of the remaining cables are mic cable rather than 110 Ω DMX cable.
+
+---
+
+## Session 7 (2026-09-02) — Fire is binary: valve channels are 0 or 255, and nothing can write anything else
+
+_Ran **concurrently** with Session 6 above, on the same rig — that session had the device,
+this one had the tree. Read Session 6 for the tower-1 cable fault; this entry is the
+firmware change and does not bear on it._
+
+Not a noise session. A design change, plus one real bug found on the way.
+
+### Headline
+
+**`flameLevel` and `fireLevel` are gone.** A valve channel now carries `0` or `255` and
+nothing else, enforced in the type system *and* at the DMX write. Per-fixture propane
+isolation survives as a boolean, `fireEnabled`.
+
+This is not a new discovery — Session 5 already recorded that these bytes were not
+proportional flame controls. What changed is that the rig stopped *offering* the setting.
+
+### Why the old design was wrong
+
+The byte reached CH 1 / 8 / 23 / 38 / 53 **verbatim**; no scaling existed anywhere in the
+path. So the slider never made a smaller flame. All it decided was whether the decoder's
+turn-on threshold was cleared. Below it, the valve stayed shut or the coil chattered.
+Flame size is gas pressure and orifice.
+
+Every layer of the codebase had been papering over this for months:
+
+| Where | What it said |
+|---|---|
+| `towers.h` | comment: "NOT a proportional flame control" |
+| web UI live readout | warned on any value `< 128` |
+| `docs/spec-live-fixture-state.md` | carried a standing correction |
+| `notes.md` Session 5 | corrected it again |
+| `scripts/towers.sh` | existed partly to flag `flameLevel=0` |
+
+> **A control that every layer has to warn about should not exist.** Five separate
+> warnings are not documentation, they are a design smell with a long paper trail.
+
+### How the rule is enforced — three independent layers
+
+Deliberately redundant, so a future refactor cannot quietly lose it.
+
+1. **Types — a partial value is unrepresentable.**
+   `TowerState.fire` (`uint8_t`) → `TowerState.fireOpen` (`bool`);
+   `confluenceWrite(uint8_t level)` → `confluenceWrite(bool open)`;
+   `morseTick()` returns `bool`. Every missed call site became a compile error, which is
+   the reason the change was shaped this way.
+
+2. **The DMX write — the backstop.** Valve channels are now declared as **data** in
+   `dmx.h` (`VALVE_CHANNELS = {1, 8, 23, 38, 53}`), and `dmxShadowWrite()` refuses any
+   other byte on one and logs it at ERROR. `dmxValveWrite(ch, bool)` is the intended
+   interface; there is no level to pass.
+
+3. **The UI and API — no field to set.** Both sliders deleted, `/set` reads no level,
+   `/api/state` reports none.
+
+**Refuse, not clamp.** A caller that computed 128 for a solenoid has a bug, and guessing
+which way to round it is guessing about propane. Dropping the write leaves the channel at
+whatever it last held, and every path that opens a valve rewrites it every frame — so the
+safe steady state is already on the wire.
+
+### Valve-ness used to be declared nowhere
+
+Before this, the firmware could not answer "is channel N a valve?". Valve-ness was an
+offset convention (`base + 4`, `base = 4 + i*15`) plus the literal `1`, restated by hand in
+**six** places: the `[DMX]` log line, `tests.cpp`, `web.cpp`'s browser JS, `scripts/towers.sh`,
+`tools/dmx-tester/index.html` and three separate test modules. Only the browser tool's copy
+was machine-readable, and it talks to an Enttec, not to the firmware.
+
+`testValveChannelMap()` now runs at boot and checks that `towers.cpp`'s stride and
+`dmx.cpp`'s registry still agree — so the two statements of the same fact cannot drift apart
+silently. `tests/valves.py` collapses the four Python copies onto one.
+
+### ⚠ Real bug found: a disconnected fixture stranded its valve OPEN
+
+Directly related to Session 5's `connected=false` finding, and worse.
+
+A fixture marked `connected=false` was skipped in the frame loop — and **a DMX channel that
+stops being written keeps its last byte.** So:
+
+> Un-tick "Connected" on a tower **during a burn**, and its solenoid stays latched at 255
+> with nothing left to close it. Same hazard on CH1 for the Confluence.
+
+Session 5 read `connected=false` as a fixture that goes *dark*. It is that — but only
+because the channels happened to be sitting at zero. Mid-fire it is the opposite failure,
+and it is the dangerous direction.
+
+Fixed: both skip paths now drive the valve shut explicitly *before* skipping. The lighting
+channels still go dark, as before — only the valve is forced.
+
+```cpp
+if (!towerConfigs[i].connected) {
+  dmxValveWrite(towerValveChannel(i), false);   // never leave a valve latched open
+  continue;
+}
+```
+
+Two host tests cover it (`test_disconnected_tower_valve_is_forced_closed`, and the
+Confluence equivalent), and `scripts/towers.sh` no longer claims the valve merely "stays
+at 0".
+
+### `fireEnabled` — why not just reuse `connected`
+
+`connected` is too blunt. Unticking it blanks the whole fixture, which on the wire is
+indistinguishable from a dead decoder or a broken cable — **the exact forgery that cost
+Sessions 2–5 a decoder, a cable test and several field days.** Turning off one tower's
+propane should not require reproducing that failure mode.
+
+`fireEnabled` isolates *only* the gas: lights keep running, so an isolated tower still
+looks alive on stage. It gates every source alike — button, purge, Morse, audio — so one
+flag isolates a fixture from all of them.
+
+Deliberately **not** on the Apply-to-All form, for the same reason `connected` isn't: a
+browser submits nothing for an unchecked box, so one "Apply to All" from a form without
+that box would clear the flag on all four towers at once.
+
+### NVS: new keys, old ones actively removed
+
+| Key | Type | Default |
+|---|---|---|
+| `t<N>v` | bool | `true` |
+| `cffe` | bool | `true` |
+
+The retired `t<N>f` / `cffl` keys are **not reused**. They hold `UChar` entries, and
+`Preferences::getBool()` on a type-mismatched key silently returns the default — too quiet
+a behaviour to rest a propane setting on. `storageSave()` calls `prefs.remove()` on both,
+so a rig that has run the old firmware sheds them on its first config write. No
+`scripts/flash.sh --erase` needed.
+
+### ⚠⚠ Shop gotcha: a shared working tree can silently disable every valve
+
+Found while coordinating with the parallel session, **not** by hitting it — but it is the
+same shape as the Session 5 trap and deserves the same prominence.
+
+The host test harness and the firmware are versioned together but **run separately**. During
+this session `tests/api.py` was already converted to the new signatures while the device was
+still on old firmware. In that window:
+
+- `set_tower()` no longer sends `flameLevel` at all.
+- Old firmware does `towerConfigs[idx].flameLevel = server.arg("flameLevel").toInt()`.
+- An absent arg gives `""`, and `"".toInt()` is **0**.
+- `storageSave()` persists it. `conftest`'s teardown re-applies the same thing.
+
+**Result: running pytest from an updated tree against older firmware sets every tower's
+flameLevel to 0 in NVS, across reboots — and it looks exactly like "the valves are dead".**
+
+> **Standing rule.** The test harness and the firmware on the device are one unit. Never
+> run the API suite from a tree that is ahead of (or behind) what is flashed. If you must
+> test old firmware, check out the matching `tests/` — a worktree is the cheap way.
+
+This generalises past `flameLevel`: **any** field the firmware reads with `server.arg()` or
+`hasArg()` and the client stops sending will silently take its zero/false value. `connected`
+and `fireEnabled` are both checkboxes and both behave this way by design.
+
+### Testing added
+
+**On-device**, printed by `runDiagnostics()` at boot over serial at 115200:
+
+- `testValveChannelMap()` — every tower valve derived from the stride is in
+  `VALVE_CHANNELS`, CH1 is registered, and no colour channel is.
+- `testValveGuardRefusesPartial()` — writes 1 / 64 / 127 / 128 / 200 / 254 at a live valve
+  channel and asserts none of them land; then confirms both legal values do, and that a
+  neighbouring colour channel still takes 128. Safe because nothing in it calls
+  `dmxUpdate()` and `runDiagnostics()` runs before `loop()` starts — **do not add a
+  `dmxUpdate()` to that function.**
+
+**Host** — `tests/test_valve_binary.py`, 14 tests: valve bytes are 0/255 under FIRE_ACTIVE,
+purge, MACHINE_GUN, Morse and a full FSM cycle; MACHINE_GUN pulses between *exactly* those
+two values (it gates time, never amplitude); a legacy `flameLevel=200` post is inert;
+`fireEnabled=false` shuts the valve while the uplight still shows the fire look;
+disconnecting a fixture mid-burn drives its valve to 0; and a non-valve channel still
+carries a mid-scale byte — the guard must not overreach onto the lights.
+
+The END_CUE white fade is the one place a ramp is deliberately generated. It lives on the
+uplight's white channel, and `test_valves_binary_across_a_full_fsm_cycle` exists to prove
+none of it leaks onto a valve.
+
+### Also changed
+
+- `tools/dmx-tester/index.html` — the Enttec tester drives the **real** solenoids, so
+  `setCh()` now enforces the same rule the firmware does.
+- `scripts/towers.sh` — `flame` column became `fire` (enabled/off); dropped the
+  `flameLevel=0` check; **added a flag for any valve byte that is neither 0 nor 255**,
+  which after this change would mean the firmware guard has been bypassed.
+- `tools/web-preview/server.py` — the mock never modelled purge or MACHINE_GUN in
+  `compose_dmx()`, so the preview showed all valves shut during a purge. Now it does, and
+  `/api/state` reports `purge` like the firmware does.
+- Web UI live readout — the `< 128` / `=== 0` warnings are **deleted, not reworded**. In
+  their place: a `fireEnabled === false` notice, plus `vf()`, which flags a non-binary valve
+  byte as a firmware fault rather than a setting to explain.
+- **`scripts/ota.sh` now has the raw-socket fallback** that `towers.sh` and `debug.sh`
+  already had — closing the open item Session 6 raised after having to hand-roll a POST.
+  curl currently returns an empty body against this device while sockets and ping are fine,
+  and ota.sh's **single un-retried curl pre-check hard-failed and blocked the upload
+  entirely**. Now every request tries curl, falls back to a plain socket, and the pre-check
+  retries three times before giving up. python3 rather than `nc` for the upload, because the
+  multipart body is binary and has to be framed exactly. Verified against a local endpoint
+  with a 1,189,852-byte payload: byte-exact, SHA-matched, over the socket path with curl
+  forced to fail.
+
+Spec: [docs/spec-solenoid-binary.md](docs/spec-solenoid-binary.md).
+
+### Flashed and verified on hardware (2026-09-02)
+
+OTA'd over WiFi with the operator present and the rig idle — `boot_id 065411b0` →
+`40431294`. **No propane: solenoid/DMX testing only.** Verified on device:
+
+- `/api/state` carries `fireEnabled` on the Confluence and all four towers; **`fireLevel`
+  and `flameLevel` are gone from the payload.**
+- **NVS migration worked with no `--erase`.** `fireEnabled` came up `true` everywhere from
+  absent `t<N>v` / `cffe` keys, and the operator's `fireDurationMs=590 / cooldownMs=40 /
+  endCueMs=330` and `theme=simon / 255 / 110` survived the flash untouched — different keys.
+- All five valve channels read 0 and stayed binary throughout.
+- **31/31 config and schema tests pass on hardware**, none of which command a valve —
+  `test_config_all_towers`, `test_config_confluence`, `test_config_per_tower`,
+  `test_config_button`, `test_state`, `test_storage`. None of those command a valve.
+- `scripts/towers.sh` reports the new `fire` column and finds no blanking config.
+
+**Not yet run on hardware: anything that opens a valve.** `test_valve_binary.py`,
+`test_dmx_output.py` and the FSM/mode suites all command valves, and the rig was mid-repair
+with hardware unplugged. They are deferred to the next session. The two boot diagnostics
+(`testValveChannelMap`, `testValveGuardRefusesPartial`) **did** run on this boot but print to
+serial, and no USB was attached to capture them.
+
+### ⚠⚠ The Session 5 trap fired again, on a rig in active use, during this session
+
+Running the API suite against the rig **silently replaced the operator's field tuning**,
+mid-session, while they were working at it.
+
+Before the suite: `mode=0  fireDurationMs=590  cooldownMs=40  endCueMs=330`, all towers
+`theme=simon brightness=255 speed=110`.
+After: `mode=1  fireDurationMs=1500  cooldownMs=3000`, towers back to `green/128/100`.
+
+**Cause.** `conftest.py`'s `_apply_baseline_config()` restored tower and Confluence config in
+both setup *and* teardown — the Session 5 fix — but **button config and the fire-uplight
+colour were only ever applied in the setup half.** `test_storage.py` writes
+`mode=1 / 1500 / 3000` to prove distinct values round-trip and **sorts last**, so its button
+write was the final NVS write of the run and outlived it.
+
+Identical failure shape to Session 5 (a test's writes surviving as device config), on a
+different field, and the Session 5 fix did not generalise because it enumerated fields
+rather than covering the category.
+
+**Fixed:** `_apply_baseline_config()` now owns the whole baseline — button config and fire
+uplight included — so setup and teardown apply the identical set. Values were restored to
+the operator's readings within a minute.
+
+> **Standing rule.** `conftest`'s teardown must restore **everything a test can persist**,
+> not a hand-picked subset. Every new persisted field is a new instance of this bug. When
+> adding one to `/set` and NVS, add it to `_apply_baseline_config()` in the same change.
+
+> **And the sharper operational rule:** even with the fix, **running the API suite resets
+> the rig to test baseline.** That is now deterministic rather than "whatever the last test
+> wrote", but it is still not the operator's tuning. **Do not run the suite against a rig
+> carrying field tuning you care about without recording `/api/state` first.**
+
+### Standing rule
+
+> **A solenoid channel is binary. There is no level, there was never a level, and no future
+> feature gets to add one.** If a rig ever gets a proportional gas valve, that is a new
+> fixture type with its own spec — not a level byte on a valve channel. The guard in
+> `dmxShadowWrite()` is scoped to those five channels and must never widen onto the lights.
+
+### ⚠ Standing assumption: NO propane unless the operator says otherwise
+
+Recorded because it was got wrong this session. A peer session reported the operator was
+"fire-testing with propane flowing" and "can hear the valves opening"; that was read as live
+gas and written into an OTA risk assessment. **There was no propane at any point.** The work
+was dry solenoid and DMX testing — solenoids clicking, bytes on the wire.
+
+> **Default to gas OFF.** Do not infer live propane from "fire testing", "tuning flame size",
+> or "the valves are opening" — those all describe dry solenoid work. The operator is the
+> only reliable source on gas state, and every session in this file so far has been dry
+> (Session 4 says so explicitly). If a decision genuinely turns on it, ask.
+
+Assuming gas that is not there is not a harmless conservative error: it produced false
+urgency, distorted a technical decision, and got recorded as fact in these notes until the
+operator corrected it.
+
+### Rig state at end of session (2026-09-02)
+
+- Running the binary-valve firmware, `boot_id 40431294`. NVS carries the new `t<N>v` / `cffe`
+  keys; the retired `t<N>f` / `cffl` were removed on first save.
+- Button config restored to the operator's values: `mode=0 fireDurationMs=590 cooldownMs=40
+  endCueMs=330`. Themes were being changed at the web UI as the session closed.
+- **Tower 1's DMX decoder is being replaced** — hardware unplugged, rig mid-repair.
+- **No tests were run after the repair began**, and nothing that commands a valve has run on
+  this firmware at all. That is the first job next session.
+
+### Reconciling with Session 6 (concurrent, same rig)
+
+Session 6 investigated tower 1 going dark and initially concluded a bad cable; **the operator
+later established it was the DMX decoder, which was replaced.** See the correction at the head
+of that section. Recorded here only so the two writeups are not read as one investigation.
+Three points where they touch:
+
+**Session 5's standing rule held, and was not sufficient.** "Confirm the controller is
+actually sending bytes" did its job — `scripts/towers.sh` came back clean (all towers
+`connected=true`, `flameLevel=255`) and CH20–23 carried correct animating data, which correctly
+placed the fault downstream of the controller. It could not narrow further than that, and the
+first guess past it (the cable) was wrong.
+
+**The shop gotcha above did NOT bite them.** Session 6 read `flameLevel 255` across all four
+towers, so no pytest run from the updated tree had polluted NVS before their measurements.
+The hazard was real but did not fire; it is recorded because the window is still open for
+anyone else running a mixed tree.
+
+**One thing this change makes moot.** Session 6 lists "`fireDurationMs` found at 60 ms" as
+the same class of trap as Session 5's `flameLevel=0` — a silent config value that stops
+flame without looking broken. `flameLevel` is now gone as a member of that class; there is
+no valve *level* left to find misconfigured. `fireDurationMs` remains, and the sub-frame
+warning in the web UI still covers it.
+
+> **Do not read this change as bearing on the cable diagnosis.** Nothing here would have
+> found or prevented it. The one overlap is the latched-valve bug above: had tower 1 been
+> un-ticked mid-burn during that debugging, the old firmware would have stranded its valve
+> open. It was not, but that is luck rather than design.
 
 ---
 

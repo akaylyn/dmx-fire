@@ -13,8 +13,8 @@
     button:     mode=0 (Fireball), fireDurationMs=3000, cooldownMs=10000,
                 endCuePattern=0, endCueMs=1000, machineGunBurstMs=200
     fire uplight: colour #ff6e00 (amber), white=0
-    confluence: connected=true, fireLevel=255
-    towers[0..3]: connected=true, palette=green, brightness=128, flameLevel=255
+    confluence: connected=true, fireEnabled=true
+    towers[0..3]: connected=true, fireEnabled=true, palette=green, brightness=128
     morse:      unit=150
 
   Design notes:
@@ -667,10 +667,10 @@
             <input type='checkbox' name='connected' id='cf' checked>
             <label for='cf'>Connected</label>
           </div>
-          <label>Fire level<div class='sr'>
-            <input type='range' name='fireLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-            <span class='val'>255</span>
-          </div></label>
+          <div class='cr'>
+            <input type='checkbox' name='fireEnabled' id='cffe' checked>
+            <label for='cffe'>Fire enabled</label>
+          </div>
           <button type='submit'>Save</button>
         </form>
       </fieldset>
@@ -729,10 +729,6 @@
               <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>100</span>
             </div></label>
-            <label>Flame level<div class='sr'>
-              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-              <span class='val'>255</span>
-            </div></label>
             <button type='submit'>Apply to All</button>
           </form>
         </fieldset>
@@ -750,6 +746,10 @@
               <input type='checkbox' name='connected' id='c0' checked>
               <label for='c0'>Connected</label>
             </div>
+            <div class='cr'>
+              <input type='checkbox' name='fireEnabled' id='f0' checked>
+              <label for='f0'>Fire enabled</label>
+            </div>
             <label>Theme<select name='theme'>
               <option value='green' selected>Green fire</option>
               <option value='blue'>Blue fire</option>
@@ -767,10 +767,6 @@
             <label>Speed (%)<div class='sr'>
               <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>100</span>
-            </div></label>
-            <label>Flame level<div class='sr'>
-              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-              <span class='val'>255</span>
             </div></label>
             <button type='submit'>Save</button>
           </form>
@@ -788,6 +784,10 @@
               <input type='checkbox' name='connected' id='c1' checked>
               <label for='c1'>Connected</label>
             </div>
+            <div class='cr'>
+              <input type='checkbox' name='fireEnabled' id='f1' checked>
+              <label for='f1'>Fire enabled</label>
+            </div>
             <label>Theme<select name='theme'>
               <option value='green' selected>Green fire</option>
               <option value='blue'>Blue fire</option>
@@ -805,10 +805,6 @@
             <label>Speed (%)<div class='sr'>
               <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>100</span>
-            </div></label>
-            <label>Flame level<div class='sr'>
-              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-              <span class='val'>255</span>
             </div></label>
             <button type='submit'>Save</button>
           </form>
@@ -826,43 +822,9 @@
               <input type='checkbox' name='connected' id='c2' checked>
               <label for='c2'>Connected</label>
             </div>
-            <label>Theme<select name='theme'>
-              <option value='green' selected>Green fire</option>
-              <option value='blue'>Blue fire</option>
-              <option value='fire'>Natural fire</option>
-              <option value='simon'>Simon (rotating)</option>
-              <option value='rainbow'>Rainbow</option>
-              <option value='warm_white'>Warm white</option>
-              <option value='bright_white'>Bright white</option>
-              <option value='candle'>Candle light</option>
-            </select></label>
-            <label>Brightness<div class='sr'>
-              <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
-              <span class='val'>128</span>
-            </div></label>
-            <label>Speed (%)<div class='sr'>
-              <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
-              <span class='val'>100</span>
-            </div></label>
-            <label>Flame level<div class='sr'>
-              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-              <span class='val'>255</span>
-            </div></label>
-            <button type='submit'>Save</button>
-          </form>
-        </fieldset>
-      </div>
-
-      <div class='tower-panel' data-sub='t3' hidden>
-        <fieldset>
-          <legend>Tower 3</legend>
-          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A050</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A054</code></p>
-          <div class='live' data-live='t3'>reading device…</div>
-          <form method='POST' action='/set'>
-            <input type='hidden' name='target' value='3'>
             <div class='cr'>
-              <input type='checkbox' name='connected' id='c3' checked>
-              <label for='c3'>Connected</label>
+              <input type='checkbox' name='fireEnabled' id='f2' checked>
+              <label for='f2'>Fire enabled</label>
             </div>
             <label>Theme<select name='theme'>
               <option value='green' selected>Green fire</option>
@@ -882,9 +844,43 @@
               <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
               <span class='val'>100</span>
             </div></label>
-            <label>Flame level<div class='sr'>
-              <input type='range' name='flameLevel' min='0' max='255' step='1' value='255' oninput="this.nextElementSibling.textContent=this.value">
-              <span class='val'>255</span>
+            <button type='submit'>Save</button>
+          </form>
+        </fieldset>
+      </div>
+
+      <div class='tower-panel' data-sub='t3' hidden>
+        <fieldset>
+          <legend>Tower 3</legend>
+          <p class='dmx-addr'>Accumulator decoder (RGB strips, fire on CH4): <code>A050</code><br>Uplight (LaluceNatz 4ch R/G/B/W): <code>A054</code></p>
+          <div class='live' data-live='t3'>reading device…</div>
+          <form method='POST' action='/set'>
+            <input type='hidden' name='target' value='3'>
+            <div class='cr'>
+              <input type='checkbox' name='connected' id='c3' checked>
+              <label for='c3'>Connected</label>
+            </div>
+            <div class='cr'>
+              <input type='checkbox' name='fireEnabled' id='f3' checked>
+              <label for='f3'>Fire enabled</label>
+            </div>
+            <label>Theme<select name='theme'>
+              <option value='green' selected>Green fire</option>
+              <option value='blue'>Blue fire</option>
+              <option value='fire'>Natural fire</option>
+              <option value='simon'>Simon (rotating)</option>
+              <option value='rainbow'>Rainbow</option>
+              <option value='warm_white'>Warm white</option>
+              <option value='bright_white'>Bright white</option>
+              <option value='candle'>Candle light</option>
+            </select></label>
+            <label>Brightness<div class='sr'>
+              <input type='range' name='brightness' min='0' max='255' step='1' value='128' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>128</span>
+            </div></label>
+            <label>Speed (%)<div class='sr'>
+              <input type='range' name='speed' min='10' max='400' step='10' value='100' oninput="this.nextElementSibling.textContent=this.value">
+              <span class='val'>100</span>
             </div></label>
             <button type='submit'>Save</button>
           </form>
@@ -1331,6 +1327,19 @@
           for (var k in cfg) setField(form, k, cfg[k]);
         }
 
+        // A solenoid channel carries 0 or 255 and nothing else — dmxShadowWrite()
+        // refuses anything in between. So a mid-scale byte here is not an operator
+        // setting to explain, it is a firmware fault to report.
+        // See docs/spec-solenoid-binary.md.
+        function valveFault(ch, valveCh) {
+          if (!ch || ch.length < valveCh) return '';
+          var v = ch[valveCh - 1];
+          if (v === 0 || v === 255) return '';
+          return "\n<span class='warn'>CH" + valveCh + " = " + v + " — a valve channel must be " +
+                 "0 or 255. This should be impossible; the binary guard in dmx.cpp has been " +
+                 "bypassed.</span>";
+        }
+
         function tick(s) {
           var ch = (s.dmx || {}).ch;
           var btn = s.button || {};
@@ -1364,18 +1373,16 @@
               if (t.brightness === 0)
                 line += "\n<span class='warn'>brightness 0 — strips stay black (the uplight " +
                         "still lights during fire).</span>";
-              if (t.flameLevel === 0)
-                line += "\n<span class='warn'>flame level 0 — CH" + (base + 4) +
-                        " never opens this valve.</span>";
-              else if (t.flameLevel < 128)
-                line += "\n<span class='stale'>flame level " + t.flameLevel + " — on/off valve, " +
-                        "not a dimmer. This only has to clear the decoder's turn-on threshold; " +
-                        "low values can fail to energise or chatter the coil.</span>";
+              if (!t.fireEnabled)
+                line += "\n<span class='warn'>fire disabled — CH" + (base + 4) +
+                        " stays shut. The lights keep running; only this tower's propane " +
+                        "is isolated.</span>";
+              line += valveFault(ch, base + 4);
             }
             render('t' + i, {
-              connected: t.connected, theme: t.theme, brightness: t.brightness,
-              speed: t.speed, flameLevel: t.flameLevel
-            }, line, !t.connected || t.brightness === 0 || t.flameLevel === 0);
+              connected: t.connected, fireEnabled: t.fireEnabled, theme: t.theme,
+              brightness: t.brightness, speed: t.speed
+            }, line, !t.connected || t.brightness === 0 || !t.fireEnabled);
           });
 
           var c = s.confluence;
@@ -1389,15 +1396,12 @@
               cl = "<span class='stale'>transmitter quiet — CH1 is composed but not sent.</span>";
             } else {
               cl = "on air   CH1 " + bytes(ch, 1, 1);
-              if (c.fireLevel === 0) {
-                cl += "\n<span class='warn'>fire level 0 — the valve never opens.</span>";
+              if (!c.fireEnabled) {
+                cl += "\n<span class='warn'>fire disabled — the central solenoid never " +
+                      "opens.</span>";
                 cbad = true;
-              } else if (c.fireLevel < 128) {
-                cl += "\n<span class='stale'>fire level " + c.fireLevel + " — the solenoid is an " +
-                      "on/off valve, not a dimmer: this byte only has to clear the decoder's " +
-                      "turn-on threshold. Low values can fail to energise the coil, or chatter " +
-                      "it. Flame size is gas pressure and orifice, not DMX.</span>";
               }
+              cl += valveFault(ch, 1);
             }
             // Fire duration is a property of the button, but it gates every valve on the
             // rig, so it is surfaced next to the solenoid it silences.
@@ -1407,7 +1411,7 @@
                     "as a single frame, far too brief to light.</span>";
               cbad = true;
             }
-            render('cf', { connected: c.connected, fireLevel: c.fireLevel }, cl, cbad);
+            render('cf', { connected: c.connected, fireEnabled: c.fireEnabled }, cl, cbad);
           }
         }
 

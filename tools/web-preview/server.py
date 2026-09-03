@@ -87,16 +87,17 @@ STATE = {
     },
     # Uplight colour held while any valve is open. Global, not per tower.
     "fireUplight": {"r": 255, "g": 110, "b": 0, "w": 0},
-    "confluence": {"connected": True, "fireLevel": 255},
+    "confluence": {"connected": True, "fireEnabled": True},
     # `speed` is a percentage where 100 = normal. Scales time-based theme
     # behaviour (flash cycle, Simon beat, rainbow hue rotation, candle flicker).
     "towers": [
-        {"connected": True, "theme": "green", "brightness": 128, "speed": 100, "flameLevel": 255},
-        {"connected": True, "theme": "green", "brightness": 128, "speed": 100, "flameLevel": 255},
-        {"connected": True, "theme": "green", "brightness": 128, "speed": 100, "flameLevel": 255},
-        {"connected": True, "theme": "green", "brightness": 128, "speed": 100, "flameLevel": 255},
+        {"connected": True, "fireEnabled": True, "theme": "green", "brightness": 128, "speed": 100},
+        {"connected": True, "fireEnabled": True, "theme": "green", "brightness": 128, "speed": 100},
+        {"connected": True, "fireEnabled": True, "theme": "green", "brightness": 128, "speed": 100},
+        {"connected": True, "fireEnabled": True, "theme": "green", "brightness": 128, "speed": 100},
     ],
     "morse": {"unitMs": 150, "playing": False, "text": ""},
+    "purge": False,
 }
 LOCK = threading.Lock()
 
@@ -181,13 +182,15 @@ def update_config(target: str, args: dict[str, str]) -> None:
         STATE["fireUplight"]["w"] = int(args.get("fireUpW", 0))
     elif target == "confluence":
         STATE["confluence"]["connected"] = "connected" in args
-        STATE["confluence"]["fireLevel"] = int(args.get("fireLevel", 0))
+        STATE["confluence"]["fireEnabled"] = "fireEnabled" in args
     elif target == "all":
         for t in STATE["towers"]:
             t["theme"] = args.get("theme", "green")
             t["brightness"] = int(args.get("brightness", 128))
             t["speed"] = int(args.get("speed", 100))
-            t["flameLevel"] = int(args.get("flameLevel", 255))
+            # No fireEnabled here — target=all is a look control, and an
+            # unchecked box submits nothing, so reading it would clear the flag
+            # on all four towers at once. Mirrors handleSet() in web.cpp.
     else:
         try:
             idx = int(target)
@@ -195,10 +198,10 @@ def update_config(target: str, args: dict[str, str]) -> None:
             return
         if 0 <= idx < len(STATE["towers"]):
             STATE["towers"][idx]["connected"] = "connected" in args
+            STATE["towers"][idx]["fireEnabled"] = "fireEnabled" in args
             STATE["towers"][idx]["theme"] = args.get("theme", "green")
             STATE["towers"][idx]["brightness"] = int(args.get("brightness", 128))
             STATE["towers"][idx]["speed"] = int(args.get("speed", 100))
-            STATE["towers"][idx]["flameLevel"] = int(args.get("flameLevel", 255))
 
 
 def build_dmx_frame() -> list[int]:
@@ -207,24 +210,36 @@ def build_dmx_frame() -> list[int]:
     Not a theme renderer — it only needs to be faithful about which channels are
     DRIVEN and which stay zero, because that is what the Towers tab's live readout
     reports. In particular a tower with connected=false must come back all-zero:
-    Test_Button_DMX.ino:209 skips towerWrite() for it entirely, and reproducing that
-    here is what lets the preview exercise the disconnected-tower banner.
+    The frame loop skips towerWrite() for a disconnected tower entirely, and
+    reproducing that here is what lets the preview exercise the disconnected-tower
+    banner. Its valve channel is the one exception — see below.
     """
     ch = [0] * 64
-    firing = STATE["fsm"]["state"] == "FIRE_ACTIVE"
+
+    # Purge bypasses the FSM and holds every valve open; the firmware gives it
+    # priority over FIRE_ACTIVE, so model it the same way here. Without this the
+    # preview's live readout showed all valves shut during a purge.
+    purge = bool(STATE.get("purge"))
+    firing = purge or STATE["fsm"]["state"] == "FIRE_ACTIVE"
 
     conf = STATE["confluence"]
     if conf["connected"]:
-        ch[0] = conf["fireLevel"] if firing else 0
+        # VALVE_OPEN / VALVE_CLOSED — the only two bytes a solenoid channel may
+        # carry. dmxShadowWrite() refuses anything else. See dmx.h.
+        ch[0] = 255 if (firing and conf["fireEnabled"]) else 0
 
     for i, t in enumerate(STATE["towers"]):
-        if not t["connected"]:
-            continue                      # skipped in the frame loop — channels stay 0
         base = 4 + i * 15                 # towers.cpp CHANNELS_PER_TOWER = 15
+        if not t["connected"]:
+            # Lighting channels are skipped in the frame loop and stay 0, but the
+            # VALVE is driven shut explicitly — an unwritten channel holds its
+            # last byte, which for a solenoid means latched open.
+            ch[base + 3] = 0
+            continue
         strip = t["brightness"] * 75 // 100   # STRIP_BRIGHTNESS_PCT
         for k in range(3):
             ch[base + k] = strip              # decoder R/G/B
-        ch[base + 3] = t["flameLevel"] if firing else 0   # decoder CH4 = valve
+        ch[base + 3] = 255 if (firing and t["fireEnabled"]) else 0   # CH4 = valve
         for k in range(3):
             ch[base + 4 + k] = t["brightness"]            # uplight R/G/B
         ch[base + 7] = 0                                  # uplight white
@@ -260,6 +275,9 @@ def build_state_json() -> bytes:
         "boot_id": STATE["boot_id"],
         "uptime_ms": now - STATE["boot_ms"],
         "fsm": {"state": fsm["state"], "elapsed_ms": now - fsm["since_ms"]},
+        # Purge bypasses the FSM, so it is reported separately — the live readout
+        # needs it to explain why every valve is open in IDLE.
+        "purge": STATE.get("purge", False),
         "button": STATE["button"],
         "fireUplight": STATE["fireUplight"],
         "ota": {"inProgress": False, "lastError": ""},

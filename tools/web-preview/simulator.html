@@ -616,7 +616,7 @@
     fireBtn.addEventListener('touchcancel', fireEnd, { passive: false });
 
     // ---- Push current preview to the device (or mock) as target=all ----
-    // POSTs the same theme/brightness/speed/flameLevel to /set that the main
+    // POSTs the same theme/brightness/speed to /set that the main
     // web UI's "Apply to All Towers" form does. Lets the operator preview an
     // animation and then commit it without switching tabs.
     var applyBtn = document.getElementById('applyBtn');
@@ -627,7 +627,6 @@
       fd.append('theme', themeSel.value);
       fd.append('brightness', brightInput.value);
       fd.append('speed', speedInput.value);
-      fd.append('flameLevel', '255');  // Not configurable in the simulator; keep default.
       applyBtn.disabled = true;
       applyStatus.textContent = 'pushing...';
       fetch('/set', { method: 'POST', body: fd }).then(function (r) {

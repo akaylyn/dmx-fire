@@ -12,7 +12,11 @@
 
 extern uint16_t morseUnitMs;   // duration of one Morse unit, default 150 ms
 
-bool    morseStart(const String& text);  // returns false if text has no codable chars
-void    morseStop();
-bool    morseActive();
-uint8_t morseTick();           // returns desired CH4 level (0 or fireLevel)
+bool morseStart(const String& text);  // returns false if text has no codable chars
+void morseStop();
+bool morseActive();
+
+// True while the current Morse unit is an ON unit. Advances playback, so call it
+// once per frame. Returns whether the valve should be OPEN — not a level: the
+// sequence is already binary, and so is the solenoid it drives.
+bool morseTick();

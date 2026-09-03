@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "board_config.h"
 #include "dmx.h"
+#include "log.h"
 
 static const uint8_t  RX_PIN = DMX_RX_PIN;   // Port A — see board_config.h
 static const uint8_t  TX_PIN = DMX_TX_PIN;
@@ -42,11 +43,37 @@ uint32_t dmxFramesSkipped = 0;
 // compares against — robust to whatever the actual buffer size turns out to be.
 static int dmxTxIdleFree = 0;
 
+// The propane solenoids. Declared here so the whole firmware can ask which
+// channels are valves instead of re-deriving it from the tower stride.
+const uint16_t VALVE_CHANNELS[NUM_VALVE_CHANNELS] = { 1, 8, 23, 38, 53 };
+
+bool dmxIsValveChannel(uint16_t ch) {
+  for (uint8_t i = 0; i < NUM_VALVE_CHANNELS; i++) {
+    if (VALVE_CHANNELS[i] == ch) return true;
+  }
+  return false;
+}
+
+void dmxValveWrite(uint16_t ch, bool open) {
+  dmxShadowWrite(open ? VALVE_OPEN : VALVE_CLOSED, ch);
+}
+
 void dmxShadowWrite(uint8_t value, uint16_t ch) {
   // DMX is 1-indexed. Ch 0 is invalid and would corrupt the start code.
-  if (ch >= 1 && ch <= DMX_SHADOW_SIZE) {
-    dmxLastFrame[ch - 1] = value;
+  if (ch < 1 || ch > DMX_SHADOW_SIZE) return;
+
+  // A valve channel takes 0 or 255 and nothing else. REFUSE rather than clamp:
+  // a caller that computed 128 for a solenoid has a bug, and guessing which way
+  // to round it is guessing about propane. Dropping the write leaves the
+  // channel at whatever it last held, and every path that opens a valve rewrites
+  // it every frame, so the safe steady state is the one already on the wire.
+  if (dmxIsValveChannel(ch) && value != VALVE_CLOSED && value != VALVE_OPEN) {
+    LOG_E("[DMX] refused %u on valve CH%u - solenoid channels are 0 or 255 only",
+          (unsigned)value, (unsigned)ch);
+    return;
   }
+
+  dmxLastFrame[ch - 1] = value;
 }
 
 void dmxSetup() {

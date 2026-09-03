@@ -11,7 +11,7 @@ void towerSetup() {
     towerConfigs[i].themeName   = "green";
     towerConfigs[i].bright      = 128;
     towerConfigs[i].speed       = 100;
-    towerConfigs[i].flameLevel  = 255;
+    towerConfigs[i].fireEnabled = true;
   }
 }
 
@@ -52,7 +52,7 @@ void towerWrite(uint8_t index, const TowerState& state) {
   dmxShadowWrite((uint8_t)(state.r * STRIP_BRIGHTNESS_PCT / 100), base + 1);  // CH1: Red
   dmxShadowWrite((uint8_t)(state.g * STRIP_BRIGHTNESS_PCT / 100), base + 2);  // CH2: Green
   dmxShadowWrite((uint8_t)(state.b * STRIP_BRIGHTNESS_PCT / 100), base + 3);  // CH3: Blue
-  dmxShadowWrite(state.fire,                                      base + 4);  // CH4: FIRE valve
+  dmxValveWrite(base + 4, state.fireOpen);                                    // CH4: FIRE valve
 
   // --- Uplight (LaluceNatz LL960S, 4-channel mode): full RGB + white ---
   // 4-channel mode is plain linear dimming per colour: no master dimmer and no
@@ -72,6 +72,10 @@ void towerWrite(uint8_t index, const TowerState& state) {
   for (uint16_t c = s + 5; c <= base + CHANNELS_PER_TOWER; c++) {
     dmxShadowWrite(0, c);
   }
+}
+
+uint16_t towerValveChannel(uint8_t index) {
+  return 4 + (uint16_t)index * CHANNELS_PER_TOWER + 4;
 }
 
 void towersWrite(const TowerState& state) {

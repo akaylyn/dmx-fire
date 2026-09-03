@@ -5,7 +5,7 @@ ConfluenceConfig confluenceConfig;
 
 void confluenceSetup() {
   confluenceConfig.connected = true;
-  confluenceConfig.fireLevel = 255;
+  confluenceConfig.fireEnabled = true;
 }
 
 // Writes the Confluence block, DMX channels 1–4.
@@ -18,9 +18,10 @@ void confluenceSetup() {
 // at A005). It is still driven to 0 every frame so an unclaimed channel can
 // never hold a stale nonzero byte — on a bus with the noise issues this rig has
 // seen, an undriven channel next to a valve is not worth the risk.
+// The solenoid takes a bool, not a level: see docs/spec-solenoid-binary.md.
 // See docs/spec-confluence-addressing.md.
-void confluenceWrite(uint8_t level) {
-  dmxShadowWrite(level, 1);  // solenoid
+void confluenceWrite(bool open) {
+  dmxValveWrite(1, open);    // solenoid — 0 or 255, never anything between
   dmxShadowWrite(0,     2);
   dmxShadowWrite(0,     3);
   dmxShadowWrite(0,     4);  // unclaimed — parked at 0

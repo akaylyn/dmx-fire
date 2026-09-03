@@ -2,11 +2,15 @@
 #include <Arduino.h>
 
 struct ConfluenceConfig {
-  bool    connected;
-  uint8_t fireLevel;  // 0=off, 255=full open; written to ch 1 (solenoid)
+  bool connected;
+  // Whether the central solenoid may open at all. Replaces the old fireLevel
+  // byte: CH1 drives an on/off valve, so a level between 0 and 255 never made a
+  // smaller flame — it only decided whether the decoder's turn-on threshold was
+  // cleared. See docs/spec-solenoid-binary.md.
+  bool fireEnabled;
 };
 
 extern ConfluenceConfig confluenceConfig;
 
 void confluenceSetup();
-void confluenceWrite(uint8_t level);  // writes level,0,0,0 to ch 1–4
+void confluenceWrite(bool open);  // writes the CH1 valve, then 0 to ch 2–4

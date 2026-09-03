@@ -1,5 +1,4 @@
 #include "morse.h"
-#include "confluence.h"
 #include "log.h"
 
 uint16_t morseUnitMs = 150;
@@ -72,14 +71,14 @@ void morseStop() {
 
 bool morseActive() { return g_active; }
 
-uint8_t morseTick() {
-  if (!g_active) return 0;
+bool morseTick() {
+  if (!g_active) return false;
   uint32_t elapsed = millis() - g_startMs;
   uint32_t idx     = elapsed / morseUnitMs;
   if (idx >= g_seq.length()) {
     LOG_I("[MORSE] playback complete");
     g_active = false;
-    return 0;
+    return false;
   }
-  return (g_seq[idx] == '1') ? confluenceConfig.fireLevel : 0;
+  return g_seq[idx] == '1';
 }

@@ -19,8 +19,12 @@ void storageLoad() {
     snprintf(key, sizeof(key), "t%db", i);
     towerConfigs[i].bright = prefs.getUChar(key, 128);
 
-    snprintf(key, sizeof(key), "t%df", i);
-    towerConfigs[i].flameLevel = prefs.getUChar(key, 255);
+    // Key is t<N>v, NOT the old t<N>f. That key holds a UChar (the retired
+    // flameLevel byte); getBool() on a type-mismatched key silently returns the
+    // default, which is too quiet a thing to depend on for a propane setting.
+    // storageSave() removes the stale key. See docs/spec-solenoid-binary.md.
+    snprintf(key, sizeof(key), "t%dv", i);
+    towerConfigs[i].fireEnabled = prefs.getBool(key, true);
 
     snprintf(key, sizeof(key), "t%ds", i);
     towerConfigs[i].speed = prefs.getUShort(key, 100);
@@ -33,7 +37,7 @@ void storageLoad() {
   }
 
   confluenceConfig.connected = prefs.getBool("cfcon", true);
-  confluenceConfig.fireLevel = prefs.getUChar("cffl",  255);
+  confluenceConfig.fireEnabled = prefs.getBool("cffe", true);   // was UChar "cffl"
 
   buttonConfig.mode              = prefs.getUChar("btnmode",    0);
   buttonConfig.fireDurationMs    = prefs.getUShort("btnfire",   3000);
@@ -84,8 +88,14 @@ void storageSave() {
     snprintf(key, sizeof(key), "t%db", i);
     prefs.putUChar(key, towerConfigs[i].bright);
 
+    snprintf(key, sizeof(key), "t%dv", i);
+    prefs.putBool(key, towerConfigs[i].fireEnabled);
+
+    // Shed the retired flameLevel byte on the first config write after upload,
+    // so a rig that has run the old firmware does not need scripts/flash.sh
+    // --erase to clear it. remove() on an absent key is a no-op.
     snprintf(key, sizeof(key), "t%df", i);
-    prefs.putUChar(key, towerConfigs[i].flameLevel);
+    prefs.remove(key);
 
     snprintf(key, sizeof(key), "t%ds", i);
     prefs.putUShort(key, towerConfigs[i].speed);
@@ -95,7 +105,8 @@ void storageSave() {
   }
 
   prefs.putBool("cfcon",    confluenceConfig.connected);
-  prefs.putUChar("cffl",    confluenceConfig.fireLevel);
+  prefs.putBool("cffe",     confluenceConfig.fireEnabled);
+  prefs.remove("cffl");   // retired fireLevel byte — see the tower loop above
 
   prefs.putUChar("btnmode",     buttonConfig.mode);
   prefs.putUShort("btnfire",    buttonConfig.fireDurationMs);

@@ -42,7 +42,7 @@ void rigForceEverythingClosed() {
   audioDisarm();
   TowerState off = {};
   for (uint8_t i = 0; i < NUM_TOWERS; i++) towerWrite(i, off);
-  confluenceWrite(0);
+  confluenceWrite(false);
   for (uint8_t i = 0; i < 4; i++) {
     dmxUpdate();
     delay(DMX_FRAME_INTERVAL_MS);

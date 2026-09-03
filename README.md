@@ -85,4 +85,4 @@ Valve channels: **1, 8, 23, 38, 53**. Uplights run in 4-channel mode (R/G/B/W) â
 | Party | Fires while held, stops on release (capped at fire duration) |
 | Machine Gun | Pulses the solenoid on/off every **burst** ms while held |
 
-Cooldown locks out re-fire for the configured duration. During `FIRE_ACTIVE` each tower's decoder CH4 valve opens (`flameLevel`) alongside the central confluence.
+Cooldown locks out re-fire for the configured duration. During `FIRE_ACTIVE` each tower's decoder CH4 valve opens fully alongside the central confluence. Valve channels are binary â€” 0 or 255, never in between (see `docs/spec-solenoid-binary.md`).

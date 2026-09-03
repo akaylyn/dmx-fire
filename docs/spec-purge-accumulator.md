@@ -35,11 +35,11 @@ A single RAM flag (`g_purgeActive`, not persisted) with three accessors:
 
 Inside the 50 Hz DMX block, `purgeActive()` is read once per frame as `purge`:
 
-- **Towers:** after the FSM switch, `if (purge) state.fire = towerConfigs[i].flameLevel;`
+- **Towers:** after the FSM switch, `if (purge) state.fireOpen = towerConfigs[i].fireEnabled;`
   — purge overrides whatever the FSM set, opening each tower's decoder CH4 valve.
   Colour/white are left as the theme rendered them (firing never forces white).
 - **Confluence:** `purge` is the highest-priority source for CH1, above Morse and
-  `FSM_FIRE_ACTIVE`: `if (purge) cfLevel = confluenceConfig.fireLevel;`.
+  `FSM_FIRE_ACTIVE`: `if (purge) cfOpen = confluenceConfig.fireEnabled;`.
 
 Disconnected towers/confluence are skipped exactly as in the normal path.
 
@@ -94,10 +94,12 @@ state is browser-side `localStorage` only, invalidated on every device reboot vi
 
 - **No physical-button purge.** Purge is web-UI/API only; the GPIO39 button keeps
   its existing FSM behaviour.
-- **No per-tower purge selection.** Purge always opens all connected towers plus
-  Confluence. Per-fixture isolation stays in the Tower Configs "Connected" toggles.
-- **No purge level control.** Purge uses each fixture's existing `flameLevel` /
-  Confluence `fireLevel`; it does not add its own level slider.
+- **No per-tower purge selection.** Purge always opens every connected tower plus
+  Confluence. Per-fixture isolation stays in the Tower Configs "Connected" and
+  "Fire enabled" toggles — purge honours both.
+- **No purge level control.** Purge opens each valve fully (255) or not at all;
+  there is no level to slide. Valve channels are binary — see
+  [`spec-solenoid-binary.md`](spec-solenoid-binary.md).
 - **No auto-timeout / dead-man logic beyond button release.** Releasing the button
   (or disarming, or losing the page) sends `/api/purge/stop`; there is no separate
   server-side maximum-open timer.

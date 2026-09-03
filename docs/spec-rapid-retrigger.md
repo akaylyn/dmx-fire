@@ -120,7 +120,7 @@ if (buttonConfig.mode == 2) {
 }
 ```
 
-Towers use `state.fire = mgOn ? flameLevel : 0`; Confluence uses the same `mgOn`.
+Towers use `state.fireOpen = mgOn && fireEnabled`; Confluence uses the same `mgOn`.
 The off-time was already a hardcoded 50 ms — exactly one DMX frame, the floor — so
 it is now written as `DMX_FRAME_INTERVAL_MS` for clarity. No behaviour change there.
 

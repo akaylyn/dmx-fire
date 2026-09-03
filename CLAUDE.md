@@ -106,6 +106,8 @@ Tower 3:     CH 50–64  (decoder A050 fire=CH53; uplight A054: CH54–57; CH58�
 
 Valve channels: **1** (Confluence), **8 / 23 / 38 / 53** (towers). The 15-channel stride is kept even though only 8 channels per tower are claimed, so every fixture keeps its existing start address — see `docs/spec-uplight-4ch-mode.md`. All unclaimed channels are driven to 0 every frame so no stale byte can sit next to a valve channel.
 
+**Valve channels are binary: 0 or 255, never in between.** They are declared as data in `dmx.h` (`VALVE_CHANNELS`), and `dmxShadowWrite()` **refuses** any other byte on one and logs it — a solenoid has a turn-on threshold, so a mid-scale value either fails to energise the coil or chatters it. Flame size is gas pressure and orifice, not DMX. Command them through `dmxValveWrite(ch, bool)`; there is no level to pass and no setting to change. Per-fixture propane isolation is the boolean `fireEnabled` (per tower and Confluence). A fixture marked `connected=false` has its valve driven shut explicitly before its block is skipped — an unwritten channel holds its last byte, which for a solenoid means latched open. See `docs/spec-solenoid-binary.md`.
+
 **Fire and white are independent channels.** The decoder's CH4 is the fire valve (opened during `FIRE_ACTIVE` and purge); the uplight's white is CH4 of its own block, driven by themes/fire look/end-cue. The valve byte never lights white; white never opens a valve. Accumulator strip RGB is capped (75%, `STRIP_BRIGHTNESS_PCT` in `towers.cpp`) to protect the old, power-limited strips; the uplight runs full brightness.
 
 **Strip RGB and uplight RGB are separate fields.** `TowerState` carries `r/g/b` (strips) *and* `ur/ug/ub` (uplight). `themeRender()` sets both to the same theme colour; while any valve is open the main loop overrides only the uplight with a configurable flame colour, so the strips keep animating. See `docs/spec-fire-uplight.md`.
@@ -122,23 +124,23 @@ Valve channels: **1** (Confluence), **8 / 23 / 38 / 53** (towers). The 15-channe
 - `fsmConsumeFirePending()` latches every entry to `FIRE_ACTIVE` so a fire window shorter than one 50 ms DMX frame still reaches the wire. **Call it exactly once per frame, before the tower loop** — it drains state. See `docs/spec-rapid-retrigger.md`.
 - **The DMX bus is the floor on shot rate**, not the FSM: `DMX_FRAME_INTERVAL_MS = 50` (deliberately slow, a flicker fix) means ~100 ms is the fastest expressible shot cycle.
 
-**Towers (`towers.h/.cpp`)** — per-tower config (theme, brightness, speed, flameLevel, connected); `towerWrite()` emits the decoder block (capped strip RGB from `r/g/b` + fire on CH4) and the uplight block (full RGB from `ur/ug/ub` + white) each tick. Idle visuals come from `themeRender()`; `flameLevel` drives the fire valve during `FIRE_ACTIVE` and purge.
+**Towers (`towers.h/.cpp`)** — per-tower config (theme, brightness, speed, fireEnabled, connected); `towerWrite()` emits the decoder block (capped strip RGB from `r/g/b` + fire on CH4) and the uplight block (full RGB from `ur/ug/ub` + white) each tick. Idle visuals come from `themeRender()`; the valve opens during `FIRE_ACTIVE` and purge unless `fireEnabled` is false. `towerValveChannel(i)` exposes the valve channel so a disconnected tower's valve can be closed without composing a state.
 
-**Themes (`themes.h/.cpp`)** — `themeRender(name, index, nowMs, brightness, speedPct)` returns a `TowerState` (RGB + white + fire) per tower per frame, with brightness already applied. Eight themes: gradient fire (`green`/`blue`/`fire`, 800 ms ON / 3200 ms OFF flash cycle) and procedural (`simon`, `rainbow`, `warm_white`, `bright_white`, `candle`). `speedPct` (10–400, 100 = normal) scales time. White themes drive the uplight white channel. Mirrored in `tools/web-preview/simulator.html`'s `renderTheme()` — keep in lock-step.
+**Themes (`themes.h/.cpp`)** — `themeRender(name, index, nowMs, brightness, speedPct)` returns a `TowerState` (RGB + white; never touches `fireOpen`) per tower per frame, with brightness already applied. Eight themes: gradient fire (`green`/`blue`/`fire`, 800 ms ON / 3200 ms OFF flash cycle) and procedural (`simon`, `rainbow`, `warm_white`, `bright_white`, `candle`). `speedPct` (10–400, 100 = normal) scales time. White themes drive the uplight white channel. Mirrored in `tools/web-preview/simulator.html`'s `renderTheme()` — keep in lock-step.
 
-**Confluence (`confluence.h/.cpp`)** — central solenoid config; only CH1 matters (3-channel decoder at A001, solenoid on its first output). Fires when FSM is `FIRE_ACTIVE`, zero otherwise. Per-tower decoder CH4 valves fire in parallel. See `docs/spec-confluence-addressing.md`.
+**Confluence (`confluence.h/.cpp`)** — central solenoid config; only CH1 matters (3-channel decoder at A001, solenoid on its first output). `confluenceWrite(bool open)` — open when FSM is `FIRE_ACTIVE` (or purge/Morse) and `fireEnabled`, zero otherwise. Per-tower decoder CH4 valves fire in parallel. See `docs/spec-confluence-addressing.md`.
 
-**DMX shadow buffer (`dmx.h/.cpp`)** — `dmxLastFrame[64]` mirrors every byte written; exposed via `/api/state` for test assertions.
+**DMX shadow buffer (`dmx.h/.cpp`)** — `dmxLastFrame[64]` IS the transmit buffer, not a mirror of one; exposed via `/api/state` for test assertions. Also owns the valve-channel registry and the binary guard described above.
 
 **Web server (`web.cpp`)** — serves a tabbed mobile config UI + REST API:
-- `GET /api/state` — JSON snapshot: `boot_id`, FSM state, button config (incl. `endCueMs`), `fireUplight` colour, per-tower config (`theme`/`brightness`/`speed`/`flameLevel`), full DMX frame
+- `GET /api/state` — JSON snapshot: `boot_id`, FSM state, button config (incl. `endCueMs`), `fireUplight` colour, per-tower config (`theme`/`brightness`/`speed`/`fireEnabled`), full DMX frame
 - `POST /set` `target=fireup` — global uplight colour held while any valve is open (`fireUpColor` as `#rrggbb`, or explicit `fireUpR/G/B/W` bytes)
 - `POST /api/button/press|release|reset` — virtual button injection for tests
 - `POST /api/purge/start|stop` — Empty Accumulator: hold every tower valve + Confluence solenoid open while pressed, bypassing the FSM (no `fireDurationMs` limit, no cooldown). Exposed as `purge` in `/api/state`.
 - `POST /api/morse|/api/morse/stop` — Morse playback
 - `POST /api/captive/dismiss` — turn off the captive-portal redirect so the OS popup closes and the operator can switch to a real browser (RAM-only flag, resets each boot). OS probe URLs (`/hotspot-detect.html`, `/generate_204`, `/ncsi.txt`, …) return success once dismissed.
 
-**Storage (`storage.cpp`)** — NVS via ESP32 `Preferences`; loaded at `setup()`, saved on config change. Per-tower theme key is `t<N>h`; speed is `t<N>s`.
+**Storage (`storage.cpp`)** — NVS via ESP32 `Preferences`; loaded at `setup()`, saved on config change. Per-tower theme key is `t<N>h`; speed is `t<N>s`; `fireEnabled` is `t<N>v` (bool). The retired `t<N>f` / `cffl` level bytes are `remove()`d on every save, so an old rig sheds them without `--erase`.
 
 ### Test Harness
 

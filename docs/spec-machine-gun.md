@@ -39,7 +39,7 @@ if (buttonConfig.mode == 2) {
 }
 ```
 
-Towers use `state.fire = mgOn ? towerConfigs[i].flameLevel : 0`; Confluence uses `cfLevel = mgOn ? confluenceConfig.fireLevel : 0`.
+Towers use `state.fireOpen = mgOn && towerConfigs[i].fireEnabled`; Confluence uses `cfOpen = mgOn && confluenceConfig.fireEnabled`. Both reach the wire as 255 or 0 — see spec-solenoid-binary.md.
 
 Non-blocking — `millis() % period` produces a square wave with `machineGunBurstMs` ON and one DMX frame OFF, indefinitely while fire is active.
 
@@ -85,4 +85,4 @@ The user lowered the minimum `cooldownMs` from 2000 ms to 50 ms specifically to 
 ## Non-goals
 
 - **Programmable burst pattern.** Only uniform period. Variable patterns (e.g. "burst burst pause burst") belong in the [Morse code feature](spec-morse-code.md), which is more general.
-- **Velocity / intensity ramp.** Burst level is always `confluenceConfig.fireLevel`. The slider gates time, not flame intensity.
+- **Velocity / intensity ramp.** A burst is fully open or fully shut; there is no level to ramp. The slider gates time, not flame intensity.

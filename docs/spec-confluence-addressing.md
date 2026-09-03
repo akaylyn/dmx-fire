@@ -26,7 +26,7 @@ that is wired to anything.
 
 | DMX CH | Decoder output | Function | Value written |
 |---|---|---|---|
-| **1** | 1 | **PROPANE SOLENOID** | `confluenceConfig.fireLevel` when firing, else 0 |
+| **1** | 1 | **PROPANE SOLENOID** | 255 when firing and `fireEnabled`, else 0 |
 | 2 | 2 | Unwired output | 0 |
 | 3 | 3 | Unwired output | 0 |
 | 4 | — (outside the decoder's span) | Unclaimed | 0 |
@@ -53,8 +53,9 @@ dmxShadowWrite(0,     3);
 dmxShadowWrite(0,     4);  // unclaimed — parked at 0
 ```
 
-`ConfluenceConfig` is unchanged (`connected`, `fireLevel`); only the destination
-channel moved. `fireLevel` remains 0–255, where 255 is fully open.
+`ConfluenceConfig` was unchanged by *that* change (`connected`, `fireLevel`); only
+the destination channel moved. `fireLevel` has since been replaced by the boolean
+`fireEnabled` — see spec-solenoid-binary.md.
 
 ### Why CH2–4 are explicitly zeroed
 
@@ -77,9 +78,9 @@ channel is defined in exactly one place. Priority within that block:
 
 | Priority | Source | Level |
 |---|---|---|
-| 1 | **Purge** (Empty Accumulator) | `confluenceConfig.fireLevel` |
+| 1 | **Purge** (Empty Accumulator) | open (255) |
 | 2 | **Morse** playback | `morseTick()` |
-| 3 | **FSM `FIRE_ACTIVE`** | `fireLevel`, pulsed in machine-gun mode (mode 2) |
+| 3 | **FSM `FIRE_ACTIVE`** | open (255), pulsed in machine-gun mode (mode 2) |
 | — | anything else (IDLE / END_CUE / COOLDOWN) | 0 |
 
 A disconnected Confluence (`connected == false`) skips the write entirely, exactly
@@ -119,7 +120,7 @@ behave exactly as before.
 
 ## Persistence
 
-None added. `connected` and `fireLevel` already persist in NVS. The channel is a
+None added. `connected` and the valve flag already persist in NVS. The channel is a
 compile-time property of `confluenceWrite()`, not a setting — changing it requires
 a firmware change, by design, so a config edit can never point a valve at the
 wrong channel.
@@ -131,7 +132,7 @@ wrong channel.
 `tests/test_dmx_output.py` asserts on `CONFLUENCE_FIRE_CH = 1`:
 
 - `test_idle_no_fire` — CH1 is 0 in IDLE.
-- `test_fire_active_drives_confluence` — CH1 equals `fireLevel` during `FIRE_ACTIVE`.
+- `test_fire_active_drives_confluence` — CH1 is fully open (255) during `FIRE_ACTIVE`.
 - `test_disconnected_confluence_stays_zero` — CH1 stays 0 when disconnected, even
   while the FSM is firing.
 - `test_unclaimed_channels_stay_zero` — CH4 (among others) is held at 0.

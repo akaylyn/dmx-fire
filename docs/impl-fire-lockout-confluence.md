@@ -1,5 +1,10 @@
 # Implementation: Fire Lockout, Button Modes, Confluence & Config
 
+> **Partly superseded by [`spec-solenoid-binary.md`](spec-solenoid-binary.md).**
+> The per-tower `flameLevel` and Confluence `fireLevel` bytes described below no
+> longer exist. A valve channel is now binary — 0 or 255 — and per-fixture propane
+> isolation is the boolean `fireEnabled`. Everything else here still holds.
+
 Implements phases 1–4 of `spec-fire-lockout-confluence.md`.
 
 > **Later changes.** The Confluence solenoid moved to **CH1** (3-channel decoder at A001,

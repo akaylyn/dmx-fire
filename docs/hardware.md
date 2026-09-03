@@ -55,7 +55,7 @@ Tower 3:    ch 50–64   (decoder 50–53, uplight 54–57, 58–64 unclaimed)
 | +1 | 1 | Decoder | Red (strip) | Capped to `STRIP_BRIGHTNESS_PCT` (75%) — old/power-limited strips |
 | +2 | 2 | Decoder | Green (strip) | Capped |
 | +3 | 3 | Decoder | Blue (strip) | Capped |
-| +4 | 4 | Decoder | **FIRE valve** | Propane only. Driven by `flameLevel` during `FIRE_ACTIVE`/purge, 0 otherwise. **Never carries white.** |
+| +4 | 4 | Decoder | **FIRE valve** | Propane only. 255 during `FIRE_ACTIVE`/purge, 0 otherwise — never anything between. **Never carries white.** |
 | +5 | 1 | Uplight | Red | Theme colour, full brightness (uncapped) |
 | +6 | 2 | Uplight | Green | |
 | +7 | 3 | Uplight | Blue | |

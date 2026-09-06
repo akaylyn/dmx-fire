@@ -132,9 +132,9 @@ def baseline():
     """Reset to known config — fast button, all towers green, confluence on."""
     post("/api/button/reset")
     post_set("button", mode=0, fireDurationMs=1500, cooldownMs=2000, endCuePattern=0)
-    post_set("confluence", connected="on", fireLevel=255)
+    post_set("confluence", connected="on", fireEnabled="on")
     for i in range(4):
-        post_set(str(i), connected="on", theme="green", brightness=255, flameLevel=255)
+        post_set(str(i), connected="on", theme="green", brightness=255, fireEnabled="on")
 
 
 def t01_state_shape(run: Run):
@@ -152,7 +152,7 @@ def t02_t03_idle_flash_blank(run: Run):
     Pass T02 if any frame has tower 0 RGBW > 0; pass T03 if any frame has all = 0.
     """
     baseline()
-    post_set("all", theme="green", brightness=255, flameLevel=255)
+    post_set("all", theme="green", brightness=255)
     time.sleep(0.3)
 
     n = 12
@@ -179,7 +179,7 @@ def t02_t03_idle_flash_blank(run: Run):
 def t04_fire_active(run: Run):
     baseline()
     post_set("button", mode=0, fireDurationMs=8000, cooldownMs=2000)
-    post_set("all", theme="fire", brightness=255, flameLevel=255)
+    post_set("all", theme="fire", brightness=255)
     time.sleep(0.3)
     post("/api/button/press")
     time.sleep(0.4)
@@ -223,7 +223,7 @@ def t06_party_release(run: Run):
     baseline()
     post("/api/button/reset")
     post_set("button", mode=1, fireDurationMs=8000, cooldownMs=2000)
-    post_set("all", theme="fire", brightness=255, flameLevel=255)
+    post_set("all", theme="fire", brightness=255)
     time.sleep(0.3)
     post("/api/button/press")
     time.sleep(0.4)
@@ -242,13 +242,13 @@ def t06_party_release(run: Run):
 
 def t07_disconnect(run: Run):
     baseline()
-    post_set("1", theme="blue", brightness=255, flameLevel=255)  # leave T1 connected first
+    post_set("1", theme="blue", brightness=255, fireEnabled="on")  # leave T1 connected first
     post_set("button", mode=0, fireDurationMs=2000, cooldownMs=2000)
     # Snapshot tower 1 channels (DMX ch 20-23 = decoder, ch 24-34 = strobe block)
     s_before = get_state()
     img_before = capture("T07_t1_connected", run.root)
     # Disconnect T1
-    post_set("1", theme="blue", brightness=255, flameLevel=255)  # connected="on" omitted = disconnected
+    post_set("1", theme="blue", brightness=255, fireEnabled="on")  # connected="on" omitted = disconnected
     time.sleep(0.3)
     s_after = get_state()
     img_after = capture("T07_t1_disconnected", run.root)
@@ -259,7 +259,7 @@ def t07_disconnect(run: Run):
                "detail": f"before connected={s_before['towers'][1]['connected']}, after connected={t1_connected}",
                "images": [str(img_before), str(img_after)]})
     # Restore
-    post_set("1", connected="on", theme="green", brightness=255, flameLevel=255)
+    post_set("1", connected="on", theme="green", brightness=255, fireEnabled="on")
 
 
 def main():
@@ -293,7 +293,7 @@ def main():
         # Safe shutdown
         try:
             post("/api/button/reset")
-            post_set("all", theme="green", brightness=128, flameLevel=255)
+            post_set("all", theme="green", brightness=128)
         except Exception:
             pass
 

@@ -35,7 +35,7 @@ the first **8** are claimed: 4 decoder + 4 uplight.
 | +1 | 1 | Decoder | Strip Red | theme R × `STRIP_BRIGHTNESS_PCT` (75%) |
 | +2 | 2 | Decoder | Strip Green | theme G × 75% |
 | +3 | 3 | Decoder | Strip Blue | theme B × 75% |
-| +4 | 4 | Decoder | **FIRE valve** | `flameLevel` during `FIRE_ACTIVE`/purge, else 0 |
+| +4 | 4 | Decoder | **FIRE valve** | 255 during `FIRE_ACTIVE`/purge, else 0 (binary) |
 | +5 | 1 | Uplight | Red | `state.ur` — theme R, or the fire look while a valve is open |
 | +6 | 2 | Uplight | Green | `state.ug` |
 | +7 | 3 | Uplight | Blue | `state.ub` |
@@ -240,7 +240,7 @@ later for the uplight/strip colour split — see
 
 ## Persistence
 
-None added or removed. Per-tower `theme` / `bright` / `speed` / `flameLevel` /
+None added or removed by this spec. Per-tower `theme` / `bright` / `speed` / `fireEnabled` /
 `connected` persist in NVS as before. The channel mode is a property of the
 physical fixture plus `towerWrite()`, not a stored setting.
 

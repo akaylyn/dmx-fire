@@ -92,9 +92,9 @@ two never overlap.
 | State | Uplight | Strips | Valve |
 |---|---|---|---|
 | `IDLE` / `COOLDOWN` | theme | theme | 0 |
-| `FIRE_ACTIVE` | **fire look, held** | theme | `flameLevel` |
+| `FIRE_ACTIVE` | **fire look, held** | theme | open (255) |
 | `END_CUE` | theme + white flash fade | theme | 0 |
-| Purge (any FSM state) | **fire look, held** | theme | `flameLevel` |
+| Purge (any FSM state) | **fire look, held** | theme | open (255) |
 
 Precedence in the frame loop is unchanged: theme renders first, the FSM overlays on
 top, and **purge wins over the FSM**.
@@ -107,7 +107,7 @@ In `MACHINE_GUN` mode every valve pulses (see
 pulse gate:
 
 ```cpp
-state.fire = mgOn ? towerConfigs[i].flameLevel : 0;
+state.fireOpen = mgOn && towerConfigs[i].fireEnabled;
 applyFireLook(state);   // NOT gated on mgOn
 ```
 

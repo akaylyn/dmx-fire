@@ -31,9 +31,9 @@ The existing `POST /set` form-urlencoded endpoint stays as the configuration mut
   "uptime_ms": 12345,
   "fsm": { "state": "IDLE", "elapsed_ms": 234 },
   "button": { "mode": 0, "fireDurationMs": 3000, "cooldownMs": 10000, "endCuePattern": 0 },
-  "confluence": { "connected": true, "fireLevel": 255 },
+  "confluence": { "connected": true, "fireEnabled": true },
   "towers": [
-    { "connected": true, "palette": "green", "brightness": 128, "flameLevel": 255 }
+    { "connected": true, "fireEnabled": true, "theme": "green", "brightness": 128, "speed": 100 }
   ],
   "dmx": { "ch": [0, 0, 0, 255, ...] }
 }

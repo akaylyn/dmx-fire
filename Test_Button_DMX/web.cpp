@@ -113,16 +113,33 @@ static void parseHexColor(const String& hex, uint8_t& r, uint8_t& g, uint8_t& b)
   b = (uint8_t)( v        & 0xff);
 }
 
-static String connectedCheck(const String& id, bool checked) {
-  String s = F("<div class='cr'>"
-               "<input type='checkbox' name='connected' id='");
+// A form checkbox. Note the semantics the /set handler relies on: a browser
+// submits nothing at all for an unchecked box, so handleSet() reads these with
+// hasArg() and absent means false. Any client posting to /set must therefore
+// send every checkbox it wants to keep on — see docs/spec-solenoid-binary.md.
+static String checkBox(const String& name, const String& id, const String& label, bool checked) {
+  String s = F("<div class='cr'><input type='checkbox' name='");
+  s += name;
+  s += F("' id='");
   s += id;
   s += '\'';
   if (checked) s += F(" checked");
   s += F("><label for='");
   s += id;
-  s += F("'>Connected</label></div>");
+  s += F("'>");
+  s += label;
+  s += F("</label></div>");
   return s;
+}
+
+static String connectedCheck(const String& id, bool checked) {
+  return checkBox(F("connected"), id, F("Connected"), checked);
+}
+
+// The per-fixture propane isolator. Replaces the old flame/fire level sliders:
+// a solenoid has no level, so the only thing left to offer is on or off.
+static String fireEnabledCheck(const String& id, bool checked) {
+  return checkBox(F("fireEnabled"), id, F("Fire enabled"), checked);
 }
 
 static String buildPage() {
@@ -410,7 +427,7 @@ static String buildPage() {
          "<form method='POST' action='/set'>"
          "<input type='hidden' name='target' value='confluence'>");
   s += connectedCheck("cf", confluenceConfig.connected);
-  s += rangeSlider("Fire level", "fireLevel", confluenceConfig.fireLevel, 0, 255);
+  s += fireEnabledCheck("cffe", confluenceConfig.fireEnabled);
   s += F("<button type='submit'>Save</button></form></fieldset></section>");
 
   // --- Towers tab (sub-tabs + Apply-to-All + per-tower loop) ---
@@ -448,7 +465,9 @@ static String buildPage() {
   s += themeSelect("theme", towerConfigs[0].themeName);
   s += rangeSlider("Brightness", "brightness", towerConfigs[0].bright, 0, 255);
   s += rangeSlider("Speed (%)", "speed", towerConfigs[0].speed, 10, 400, 10);
-  s += rangeSlider("Flame level", "flameLevel", towerConfigs[0].flameLevel, 0, 255);
+  // No Fire enabled here, for the same reason there is no Connected: an
+  // unchecked box submits nothing, so an Apply-to-All would silently clear the
+  // flag on all four towers at once.
   s += F("<button type='submit'>Apply to All</button></form></fieldset></div>");
 
   for (uint8_t i = 0; i < NUM_TOWERS; i++) {
@@ -481,10 +500,10 @@ static String buildPage() {
     s += i;
     s += F("'>");
     s += connectedCheck("c" + String(i), towerConfigs[i].connected);
+    s += fireEnabledCheck("f" + String(i), towerConfigs[i].fireEnabled);
     s += themeSelect("theme", towerConfigs[i].themeName);
     s += rangeSlider("Brightness", "brightness", towerConfigs[i].bright, 0, 255);
     s += rangeSlider("Speed (%)", "speed", towerConfigs[i].speed, 10, 400, 10);
-    s += rangeSlider("Flame level", "flameLevel", towerConfigs[i].flameLevel, 0, 255);
     s += F("<button type='submit'>Save</button></form></fieldset></div>");
   }
   s += F("</section>");
@@ -734,6 +753,15 @@ static String buildPage() {
          "if(b&&b.classList&&b.classList.contains('val'))b.textContent=v;}"
          "function by(c,s,n){"
          "return(!c||c.length<s-1+n)?'?':c.slice(s-1,s-1+n).join('/');}"
+         // vf() — a solenoid channel carries 0 or 255 and nothing else, because
+         // dmxShadowWrite() refuses anything in between. A mid-scale byte here is
+         // therefore not an operator setting to explain but a firmware fault to
+         // report. See docs/spec-solenoid-binary.md.
+         "function vf(c,vc){"
+         "if(!c||c.length<vc)return '';"
+         "var v=c[vc-1];if(v===0||v===255)return '';"
+         "return \"\\n<span class='warn'>CH\"+vc+' = '+v+' - a valve channel must be 0 or 255. '"
+         "+'This should be impossible; the binary guard in dmx.cpp has been bypassed.</span>';}"
          "function rd(k,cfg,body,bad){"
          "var e=lv[k];if(!e)return;e.innerHTML=body;e.classList.toggle('bad',!!bad);"
          "var f=fm[k];if(!f)return;"
@@ -763,14 +791,13 @@ static String buildPage() {
          "l='on air   decoder '+by(c,B+1,4)+'   uplight '+by(c,B+5,4);"
          "if(t.brightness===0)l+=\"\\n<span class='warn'>brightness 0 - strips stay black \""
          "+'(the uplight still lights during fire).</span>';"
-         "if(t.flameLevel===0)l+=\"\\n<span class='warn'>flame level 0 - CH\"+(B+4)"
-         "+' never opens this valve.</span>';"
-         "else if(t.flameLevel<128)l+=\"\\n<span class='stale'>flame level \"+t.flameLevel"
-         "+' - on/off valve, not a dimmer. This only has to clear the decoder turn-on '"
-         "+'threshold; low values can fail to energise or chatter the coil.</span>';}"
-         "rd('t'+i,{connected:t.connected,theme:t.theme,brightness:t.brightness,"
-         "speed:t.speed,flameLevel:t.flameLevel},l,"
-         "!t.connected||t.brightness===0||t.flameLevel===0);});"
+         "if(!t.fireEnabled)l+=\"\\n<span class='warn'>fire disabled - CH\"+(B+4)"
+         "+' stays shut. The lights keep running; only this tower propane is isolated.'"
+         "+'</span>';"
+         "l+=vf(c,B+4);}"
+         "rd('t'+i,{connected:t.connected,fireEnabled:t.fireEnabled,theme:t.theme,"
+         "brightness:t.brightness,speed:t.speed},l,"
+         "!t.connected||t.brightness===0||!t.fireEnabled);});"
          "var q=s.confluence;"
          "if(q){var m,bad=false;"
          "if(!q.connected){"
@@ -779,20 +806,17 @@ static String buildPage() {
          "else if(q){"
          "m=\"<span class='stale'>transmitter quiet - CH1 is composed but not sent.</span>\";}"
          "else{m='on air   CH1 '+by(c,1,1);"
-         "if(q.fireLevel===0){"
-         "m+=\"\\n<span class='warn'>fire level 0 - the valve never opens.</span>\";bad=true;}"
-         "else if(q.fireLevel<128)"
-         "m+=\"\\n<span class='stale'>fire level \"+q.fireLevel+' - the solenoid is an on/off '"
-         "+'valve, not a dimmer: this byte only has to clear the decoder turn-on threshold. '"
-         "+'Low values can fail to energise the coil, or chatter it. Flame size is gas '"
-         "+'pressure and orifice, not DMX.</span>';}"
+         "if(!q.fireEnabled){"
+         "m+=\"\\n<span class='warn'>fire disabled - the central solenoid never opens.\""
+         "+'</span>';bad=true;}"
+         "m+=vf(c,1);}"
          // Fire duration belongs to the button, but it gates every valve on the
          // rig, so it is surfaced next to the solenoid it silences.
          "if(b.fireDurationMs!==undefined&&b.fireDurationMs<F){"
          "m+=\"\\n<span class='warn'>fire duration \"+b.fireDurationMs+' ms is shorter than one '"
          "+F+' ms DMX frame - a shot can only reach the wire as a single frame, far too '"
          "+'brief to light.</span>';bad=true;}"
-         "rd('cf',{connected:q.connected,fireLevel:q.fireLevel},m,bad);}}"
+         "rd('cf',{connected:q.connected,fireEnabled:q.fireEnabled},m,bad);}}"
          "function poll(){"
          "fetch('/api/state').then(function(r){return r.json()}).then(tick).catch(function(){"
          "Object.keys(lv).forEach(function(k){"
@@ -886,8 +910,11 @@ static void handleSet() {
   LOG_I("[WEB] POST /set  target=%s  %s", target.c_str(), args.c_str());
 
   if (target == "confluence") {
-    confluenceConfig.connected = server.hasArg("connected");
-    confluenceConfig.fireLevel = (uint8_t)server.arg("fireLevel").toInt();
+    confluenceConfig.connected   = server.hasArg("connected");
+    // Checkbox semantics, same as `connected`: absent means off. A legacy
+    // client still posting fireLevel= gets no valve level, because there is no
+    // longer one to set — see docs/spec-solenoid-binary.md.
+    confluenceConfig.fireEnabled = server.hasArg("fireEnabled");
 
   } else if (target == "button") {
     // Clamped: mode now selects propane behaviour (3–6 are audio-driven), so an
@@ -921,12 +948,13 @@ static void handleSet() {
     uint8_t  bright     = (uint8_t)server.arg("brightness").toInt();
     uint16_t speed      = (uint16_t)server.arg("speed").toInt();
     if (speed < 10 || speed > 400) speed = 100;
-    uint8_t  flameLevel = (uint8_t)server.arg("flameLevel").toInt();
+    // Apply-to-All covers the look only. fireEnabled is deliberately absent for
+    // the same reason `connected` is: it is a per-fixture safety flag, and a
+    // form that omits a checkbox would clear it for all four towers at once.
     for (uint8_t i = 0; i < NUM_TOWERS; i++) {
-      towerConfigs[i].themeName  = themeName;
-      towerConfigs[i].bright     = bright;
-      towerConfigs[i].speed      = speed;
-      towerConfigs[i].flameLevel = flameLevel;
+      towerConfigs[i].themeName = themeName;
+      towerConfigs[i].bright    = bright;
+      towerConfigs[i].speed     = speed;
     }
 
   } else if (target == "audio") {
@@ -937,11 +965,11 @@ static void handleSet() {
     if (idx < NUM_TOWERS) {
       uint16_t speed = (uint16_t)server.arg("speed").toInt();
       if (speed < 10 || speed > 400) speed = 100;
-      towerConfigs[idx].connected  = server.hasArg("connected");
-      towerConfigs[idx].themeName  = server.arg("theme");
-      towerConfigs[idx].bright     = (uint8_t)server.arg("brightness").toInt();
-      towerConfigs[idx].speed      = speed;
-      towerConfigs[idx].flameLevel = (uint8_t)server.arg("flameLevel").toInt();
+      towerConfigs[idx].connected   = server.hasArg("connected");
+      towerConfigs[idx].fireEnabled = server.hasArg("fireEnabled");
+      towerConfigs[idx].themeName   = server.arg("theme");
+      towerConfigs[idx].bright      = (uint8_t)server.arg("brightness").toInt();
+      towerConfigs[idx].speed       = speed;
     }
   }
 
@@ -1160,8 +1188,8 @@ static void handleApiState() {
 
   s += F(",\"confluence\":{\"connected\":");
   s += (confluenceConfig.connected ? F("true") : F("false"));
-  s += F(",\"fireLevel\":");
-  s += confluenceConfig.fireLevel;
+  s += F(",\"fireEnabled\":");
+  s += confluenceConfig.fireEnabled ? F("true") : F("false");
   s += '}';
 
   // Audio block sits BEFORE the dmx block so the "]}}" terminator at the end of
@@ -1255,8 +1283,8 @@ static void handleApiState() {
     s += towerConfigs[i].bright;
     s += F(",\"speed\":");
     s += towerConfigs[i].speed;
-    s += F(",\"flameLevel\":");
-    s += towerConfigs[i].flameLevel;
+    s += F(",\"fireEnabled\":");
+    s += towerConfigs[i].fireEnabled ? F("true") : F("false");
     s += '}';
   }
   s += ']';

@@ -214,7 +214,7 @@ def test_audio_rejects_bad_packets(device):
 def test_audio_flood_does_not_stall_the_dmx_loop(device):
     """AUDIO_MAX_DRAIN bounds the work a flood can force. The device must still
     answer HTTP and still be writing DMX afterwards."""
-    device.set_all_towers(theme="bright_white", brightness=255, flameLevel=200)
+    device.set_all_towers(theme="bright_white", brightness=255)
     with AudioSender(host_ip(device), rate=1500) as tx:
         tx.set_bands(level=200)
         time.sleep(2.0)
@@ -569,7 +569,7 @@ def test_audio_machine_gun_locks_to_the_beat(device):
 def test_audio_lights_react_when_fresh_but_disarmed(device):
     """Lights follow freshness alone; fire additionally needs armed + an audio mode."""
     device.set_button(mode=0, fireDurationMs=500, cooldownMs=2000, endCueMs=0)
-    device.set_all_towers(theme="green", brightness=40, flameLevel=200)
+    device.set_all_towers(theme="green", brightness=40)
     device.set_audio(audLightMode=1, audLightDepth=255)
     device.audio_disarm()
     uplight = TOWER_FIRE_CH[0] + 1           # uplight block starts one past the valve
@@ -593,7 +593,7 @@ def test_audio_light_glow_survives_the_gradient_blank(device):
     this immediately; the additive max() composition lights the blank phase.
     """
     device.set_button(mode=0, fireDurationMs=500, cooldownMs=2000, endCueMs=0)
-    device.set_all_towers(theme="green", brightness=128, flameLevel=200)
+    device.set_all_towers(theme="green", brightness=128)
     device.set_audio(audLightMode=1, audLightDepth=255)
     uplight = TOWER_FIRE_CH[0] + 1
     with AudioSender(host_ip(device)) as tx:

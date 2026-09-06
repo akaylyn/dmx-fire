@@ -111,7 +111,7 @@ def test_short_tap_still_opens_a_valve(device):
     """
     TOWER_FIRE_CH = [8, 23, 38, 53]
     device.reset()
-    device.set_all_towers(theme="green", brightness=128, flameLevel=200)
+    device.set_all_towers(theme="green", brightness=128)
     device.set_button(mode=1, fireDurationMs=10, cooldownMs=0, endCueMs=0)
 
     # Fire a burst of very short taps and watch for the valve byte on the wire.

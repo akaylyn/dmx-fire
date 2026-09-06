@@ -78,7 +78,7 @@ solenoid is wired to the decoder's **first output**; outputs 2 and 3 are unwired
 
 | Decoder output | Universe CH | Signal |
 |----------------|-------------|--------|
-| 1 | **1** | **Propane solenoid** — `fireLevel` while firing, 0 otherwise |
+| 1 | **1** | **Propane solenoid** — 255 while firing, 0 otherwise (binary; see spec-solenoid-binary.md) |
 | 2 | 2 | unwired (written 0) |
 | 3 | 3 | unwired (written 0) |
 
@@ -95,7 +95,7 @@ propane valve.
 | 1 | Strip Red | Capped to 75% (`STRIP_BRIGHTNESS_PCT`) — old, power-limited strips |
 | 2 | Strip Green | Capped |
 | 3 | Strip Blue | Capped |
-| 4 | **Propane valve** | `flameLevel` while firing/purging, 0 otherwise. **Never carries white.** |
+| 4 | **Propane valve** | 255 while firing/purging, 0 otherwise. Binary only. **Never carries white.** |
 
 Resolved valve channels: tower 0 = ch 8, tower 1 = ch 23, tower 2 = ch 38, tower 3 = ch 53.
 

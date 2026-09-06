@@ -45,9 +45,10 @@ computed from `dmx.ch` with the same `base = 4 + i * 15` stride as `towers.cpp`.
 |---|---|
 | `connected: false` | DISCONNECTED — names the exact channel range that stays at 0, and the fix |
 | `brightness: 0` | strips stay black (the uplight still lights during fire, via `applyFireLook()`) |
-| `flameLevel: 0` | that valve channel never opens |
-| `flameLevel < 128` | on/off valve, not a dimmer — may fail to energise or chatter the coil |
-| Confluence `connected: false` | `confluenceWrite()` skipped, CH1 never fires |
+| `fireEnabled: false` | that valve is held shut; the lights keep running, so the fixture looks healthy |
+| valve byte not 0 or 255 | a firmware fault, not a setting — the binary guard in `dmx.cpp` has been bypassed |
+| Confluence `connected: false` | CH1 is driven shut and never fires |
+| Confluence `fireEnabled: false` | central solenoid isolated; the tower valves can still open |
 | `button.fireDurationMs < 50` | shorter than one DMX frame — can only reach the wire as a single frame, too brief to light |
 | `dmx.quiet` | drops "on air" entirely — *"composed but not sent"* |
 
@@ -55,10 +56,15 @@ computed from `dmx.ch` with the same `base = 4 + i * 15` stride as `towers.cpp`.
 so background polling would add DMX frame jitter for nothing — the same rule the Audio tab
 already follows.
 
-**Related correction.** `flameLevel` / `fireLevel` are **not** proportional flame controls.
-The solenoid is an on/off valve; the byte only has to clear the decoder's turn-on threshold
-to energise the coil. Flame *size* is gas pressure and orifice, not DMX. The old
-`towers.h` comment ("0=off, 255=full open") said otherwise and has been rewritten.
+**Superseded correction.** This spec originally warned about `flameLevel < 128`, because
+`flameLevel` / `fireLevel` were **not** proportional flame controls: the solenoid is an
+on/off valve, the byte only had to clear the decoder's turn-on threshold, and flame *size*
+is gas pressure and orifice, not DMX.
+
+Those settings no longer exist. A valve channel now carries 0 or 255 and nothing else —
+`dmxShadowWrite()` refuses anything in between — so there is no low value left to warn
+about. What replaced the warning is the boolean `fireEnabled` row above, plus a check that
+flags a non-binary valve byte as a firmware fault. See `docs/spec-solenoid-binary.md`.
 
 ---
 

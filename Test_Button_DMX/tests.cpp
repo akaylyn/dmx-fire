@@ -33,16 +33,18 @@ static void testTowerConfig() {
   HEAD("Tower config (loaded from NVS)");
   bool anyConnected = false;
   for (uint8_t i = 0; i < NUM_TOWERS; i++) {
-    INFO("Tower %d: connected=%-5s  bright=%3d  speed=%3d%%  flameLevel=%3d  theme=%s",
+    INFO("Tower %d: connected=%-5s  fire=%-5s  bright=%3d  speed=%3d%%  theme=%s",
          i,
-         towerConfigs[i].connected ? "true" : "false",
+         towerConfigs[i].connected   ? "true" : "false",
+         towerConfigs[i].fireEnabled ? "on"   : "OFF",
          towerConfigs[i].bright,
          towerConfigs[i].speed,
-         towerConfigs[i].flameLevel,
          towerConfigs[i].themeName.c_str());
     if (towerConfigs[i].connected) anyConnected = true;
     if (!towerConfigs[i].connected)
       FAIL("Tower " + String(i) + " is marked disconnected — skipped in DMX loop");
+    if (!towerConfigs[i].fireEnabled)
+      FAIL("Tower " + String(i) + " has fire disabled — its valve will not open");
     if (towerConfigs[i].bright < 8)
       FAIL("Tower " + String(i) + " brightness=" + String(towerConfigs[i].bright) + " — may be invisible; try ≥32");
   }
@@ -53,12 +55,12 @@ static void testTowerConfig() {
 
 static void testConfluenceConfig() {
   HEAD("Confluence config");
-  INFO("connected=%s  fireLevel=%d",
-       confluenceConfig.connected ? "true" : "false",
-       confluenceConfig.fireLevel);
+  INFO("connected=%s  fire=%s",
+       confluenceConfig.connected   ? "true" : "false",
+       confluenceConfig.fireEnabled ? "on"   : "OFF");
   if (!confluenceConfig.connected) FAIL("Confluence marked disconnected — solenoid will not fire");
-  if (confluenceConfig.fireLevel == 0) FAIL("fireLevel=0 — solenoid will not open even when FSM fires");
-  if (confluenceConfig.connected && confluenceConfig.fireLevel > 0) PASS("Confluence config OK");
+  if (!confluenceConfig.fireEnabled) FAIL("Confluence fire disabled — the solenoid will not open even when the FSM fires");
+  if (confluenceConfig.connected && confluenceConfig.fireEnabled) PASS("Confluence config OK");
 }
 
 // ---- DMX address map ----------------------------------------------------
@@ -131,15 +133,15 @@ static void testDmxVisual() {
   TowerState state = {};
   state.r  = state.g  = state.b  = 255;  // accumulator strips (capped in towerWrite)
   state.ur = state.ug = state.ub = 255;  // uplight RGB — separate fields since the fire-look split
-  state.white = 255;   // uplight white channel
-  state.fire  = 0;     // NEVER open the propane valves during a boot diagnostic
+  state.white    = 255;    // uplight white channel
+  state.fireOpen = false;  // NEVER open the propane valves during a boot diagnostic
 
   uint32_t deadline = millis() + 500;
   while (millis() < deadline) {
     for (uint8_t i = 0; i < NUM_TOWERS; i++) {
       towerWrite(i, state);
     }
-    confluenceWrite(0);  // don't open central solenoid during test
+    confluenceWrite(false);  // don't open central solenoid during test
     dmxUpdate();
     delay(20);
   }
@@ -147,10 +149,108 @@ static void testDmxVisual() {
   // Return all to zero
   TowerState off = {};
   for (uint8_t i = 0; i < NUM_TOWERS; i++) towerWrite(i, off);
-  confluenceWrite(0);
+  confluenceWrite(false);
   dmxUpdate();
 
   PASS("Visual test complete — did the fixtures light up?");
+}
+
+// ---- Valve channel registry --------------------------------------------
+// The valve list in dmx.cpp and the tower stride in towers.cpp are two
+// independent statements of the same fact. This checks they still agree, so a
+// future change to CHANNELS_PER_TOWER or NUM_TOWERS cannot silently leave a
+// solenoid outside the set of channels the binary guard protects.
+
+static void testValveChannelMap() {
+  HEAD("Valve channel registry");
+
+  String list;
+  for (uint8_t i = 0; i < NUM_VALVE_CHANNELS; i++) {
+    if (i) list += ", ";
+    list += String(VALVE_CHANNELS[i]);
+  }
+  INFO("Registered valve channels: %s", list.c_str());
+
+  bool ok = true;
+
+  // Every tower valve derived from the stride must be in the registry.
+  for (uint8_t i = 0; i < NUM_TOWERS; i++) {
+    uint16_t ch = towerValveChannel(i);
+    if (!dmxIsValveChannel(ch)) {
+      FAIL("Tower " + String(i) + " valve CH" + String(ch) +
+           " is NOT in VALVE_CHANNELS — the stride and the registry disagree");
+      ok = false;
+    }
+  }
+  if (!dmxIsValveChannel(1)) {
+    FAIL("Confluence CH1 is not registered as a valve channel");
+    ok = false;
+  }
+
+  // ...and nothing else may be. A colour channel wrongly marked as a valve
+  // would have its dimming refused, which is a visible fault, not a safe one.
+  const uint16_t notValves[] = { 2, 3, 4, 7, 9, 12, 22, 24, 37, 39, 52, 54, 64 };
+  for (uint8_t i = 0; i < sizeof(notValves) / sizeof(notValves[0]); i++) {
+    if (dmxIsValveChannel(notValves[i])) {
+      FAIL("CH" + String(notValves[i]) + " is wrongly registered as a valve");
+      ok = false;
+    }
+  }
+
+  if (ok) PASS("Valve registry matches the tower stride; no colour channel is flagged");
+}
+
+// ---- Binary valve guard -------------------------------------------------
+// The unit proof that a solenoid channel cannot carry a partial byte. Runs
+// against the real shadow buffer, on a valve channel, and leaves it closed.
+//
+// Safe despite briefly setting CH8 to 255: nothing here calls dmxUpdate(), and
+// runDiagnostics() is invoked at the end of setup() before loop() starts, so no
+// frame can be emitted while the buffer holds the open byte. Do not add a
+// dmxUpdate() to this function.
+
+static void testValveGuardRefusesPartial() {
+  HEAD("Binary valve guard (0 or 255 only)");
+
+  const uint16_t ch  = towerValveChannel(0);   // CH8
+  const uint16_t idx = ch - 1;                 // dmxLastFrame is 0-indexed
+
+  dmxValveWrite(ch, false);
+  if (dmxLastFrame[idx] != VALVE_CLOSED) {
+    FAIL("dmxValveWrite(ch, false) left CH" + String(ch) + " at " + String(dmxLastFrame[idx]));
+  }
+
+  // The whole point: a mid-scale byte must not reach a valve channel.
+  // Expect one "[DMX] refused" line on the console for each of these.
+  const uint8_t partials[] = { 1, 64, 127, 128, 200, 254 };
+  bool refused = true;
+  for (uint8_t i = 0; i < sizeof(partials) / sizeof(partials[0]); i++) {
+    dmxShadowWrite(partials[i], ch);
+    if (dmxLastFrame[idx] != VALVE_CLOSED) {
+      FAIL("CH" + String(ch) + " accepted partial value " + String(partials[i]));
+      refused = false;
+      dmxShadowWrite(VALVE_CLOSED, ch);   // put it back before the next attempt
+    }
+  }
+  if (refused) PASS("Valve channel refused every partial byte (1/64/127/128/200/254)");
+
+  // Both legal values still get through.
+  dmxValveWrite(ch, true);
+  if (dmxLastFrame[idx] == VALVE_OPEN) PASS("dmxValveWrite(ch, true) -> 255");
+  else FAIL("dmxValveWrite(ch, true) left CH" + String(ch) + " at " + String(dmxLastFrame[idx]));
+
+  dmxValveWrite(ch, false);
+  if (dmxLastFrame[idx] == VALVE_CLOSED) PASS("dmxValveWrite(ch, false) -> 0");
+  else FAIL("dmxValveWrite(ch, false) left CH" + String(ch) + " at " + String(dmxLastFrame[idx]));
+
+  // A colour channel in the same block must still dim normally.
+  dmxShadowWrite(128, ch - 1);   // decoder CH3 (Blue)
+  if (dmxLastFrame[ch - 2] == 128) PASS("Non-valve channel still accepts mid-scale values");
+  else FAIL("Guard leaked onto a colour channel — CH" + String(ch - 1) + " rejected 128");
+  dmxShadowWrite(0, ch - 1);
+
+  // Leave the bus as we found it: valve shut.
+  dmxValveWrite(ch, false);
 }
 
 // ---- Public entry point -------------------------------------------------
@@ -161,6 +261,8 @@ void runDiagnostics() {
   testTowerConfig();
   testConfluenceConfig();
   testDmxAddresses();
+  testValveChannelMap();
+  testValveGuardRefusesPartial();
   testStorage();
   testFsm();
   testDmxVisual();

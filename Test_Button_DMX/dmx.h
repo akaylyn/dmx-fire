@@ -75,8 +75,41 @@ void dmxSetup();
 void dmxSetQuiet(bool quiet);
 bool dmxQuiet();
 
+// --- Solenoid (valve) channels --------------------------------------------
+// The channels wired to a propane solenoid, declared as DATA rather than left
+// as an offset convention. Valve-ness used to be implicit — the tower valve was
+// "whatever base + 4 works out to", the Confluence valve was a literal 1 — and
+// the same five numbers were hand-copied into the log line, the tests, the
+// diagnostics script and two browser tools. Nothing could ask "is this channel
+// a valve?", so nothing could enforce anything about one.
+//
+// A solenoid is a BINARY device. The decoder has a turn-on threshold; a byte
+// near it either fails to energise the coil or chatters it. Flame size is gas
+// pressure and orifice, not DMX. So these channels carry 0 or 255 and nothing
+// else — see docs/spec-solenoid-binary.md.
+//
+// Mirrors tools/dmx-tester/index.html and docs/hardware.md. Kept in step with
+// towers.cpp by testValveChannelMap() in tests.cpp, which recomputes the tower
+// stride and checks every valve it derives appears here.
+static const uint8_t  NUM_VALVE_CHANNELS = 5;
+extern const uint16_t VALVE_CHANNELS[NUM_VALVE_CHANNELS];  // {1, 8, 23, 38, 53}
+
+static const uint8_t VALVE_CLOSED = 0;
+static const uint8_t VALVE_OPEN   = 255;
+
+// True if this DMX channel drives a propane solenoid.
+bool dmxIsValveChannel(uint16_t ch);
+
+// Open or close a valve channel. This is the ONLY way to command a solenoid:
+// there is no level to pass, because there is no level a solenoid can express.
+void dmxValveWrite(uint16_t ch, bool open);
+
 // Write a byte into the frame buffer. 1-indexed; channels outside
 // 1..DMX_SHADOW_SIZE are ignored so the padding stays zero.
+//
+// A valve channel accepts only VALVE_CLOSED or VALVE_OPEN; any other value is
+// refused and logged. Prefer dmxValveWrite() for those channels — this refusal
+// is the backstop, not the interface.
 void dmxShadowWrite(uint8_t value, uint16_t ch);
 
 // True when the previous frame has fully drained from the UART TX buffer, so a

@@ -38,7 +38,7 @@ S = . . .       → 10101
 
 Final sequence: `"10101" + "000" + "11101110111" + "000" + "10101"` (35 units = 5250 ms at 150 ms/unit).
 
-`morseTick()` returns `confluenceConfig.fireLevel` when the current unit (computed from `millis() - startMs`) is `'1'`, else 0. When the index runs past the end of the sequence, playback ends and the function returns 0.
+`morseTick()` returns `true` when the current unit (computed from `millis() - startMs`) is `'1'`, else `false`. The main loop ANDs that with `confluenceConfig.fireEnabled` and writes the valve as 255 or 0 — a Morse unit is fully on or fully off, like every other valve command (see spec-solenoid-binary.md). When the index runs past the end of the sequence, playback ends and the function returns `false`.
 
 ---
 

@@ -61,7 +61,7 @@ Renders set only `r`/`g`/`b`/`white`, with `brightness` already applied. The upl
 
 ## Persistence
 
-`themeName` (`t<N>h`) and `speed` (`t<N>s`) persist to NVS, saved on every config change like brightness/flameLevel. The key rename from `t<N>p` is intentional and un-migrated: after first boot post-upload, each tower's theme resets to `green` once, then persists normally.
+`themeName` (`t<N>h`) and `speed` (`t<N>s`) persist to NVS, saved on every config change like brightness. The key rename from `t<N>p` is intentional and un-migrated: after first boot post-upload, each tower's theme resets to `green` once, then persists normally.
 
 ---
 

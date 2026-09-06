@@ -35,7 +35,7 @@ Central confluence solenoid occupies CH1–4 (**CH1 = central valve**; 3-channel
 
 **Decoder (base+1 … base+4):**
 - base+1..3: strip R/G/B, scaled by `STRIP_BRIGHTNESS_PCT` (75%) to protect the old strips. Full white (all three channels) is the worst-case draw, so this ceiling bounds every theme.
-- base+4: `state.fire` — the propane valve. Set only by the FSM (`flameLevel` during `FIRE_ACTIVE`), 0 otherwise. Never carries white.
+- base+4: `state.fireOpen` — the propane valve. Opened only by the FSM (`FIRE_ACTIVE`) or purge, and only ever to 255. Never carries white. See spec-solenoid-binary.md.
 
 **Uplight (base+5 … base+8):** full theme RGB on its R/G/B and `state.white` on its W, in 4-channel mode. White is independent of fire. Channels base+9 … base+15 are unclaimed and driven to 0. See [spec-uplight-4ch-mode.md](spec-uplight-4ch-mode.md).
 
@@ -48,7 +48,7 @@ Central confluence solenoid occupies CH1–4 (**CH1 = central valve**; 3-channel
 ### Main loop (`Test_Button_DMX.ino`)
 
 `themeRender()` runs every frame for colour + white. The FSM overlays:
-- `FIRE_ACTIVE`: `state.fire = towerConfigs[i].flameLevel` (valve opens) **and the uplight takes the configured fire look** — see below.
+- `FIRE_ACTIVE`: `state.fireOpen = mgOn && towerConfigs[i].fireEnabled` (valve opens fully) **and the uplight takes the configured fire look** — see below.
 - `END_CUE`: white-flash fade applied to `state.white` (uplight), not the valve. Scaled to `buttonConfig.endCueMs`.
 - IDLE/COOLDOWN: theme only.
 
@@ -79,7 +79,7 @@ Per-tower and Apply-to-All panels show a `.dmx-addr` hint giving the decoder and
 
 ## Persistence
 
-No new NVS fields. `flameLevel` already persists. `STRIP_BRIGHTNESS_PCT` is a compile-time constant in `towers.cpp`.
+No new NVS fields for this spec. The per-tower propane flag is `fireEnabled` (`t<N>v`) — see spec-solenoid-binary.md. `STRIP_BRIGHTNESS_PCT` is a compile-time constant in `towers.cpp`.
 
 ---
 

@@ -206,7 +206,14 @@ void loop() {
     }
 
     for (uint8_t i = 0; i < NUM_TOWERS; i++) {
-      if (!towerConfigs[i].connected) continue;
+      if (!towerConfigs[i].connected) {
+        // Skipping the block used to mean skipping its VALVE too, and a channel
+        // that stops being written keeps its last byte. Un-ticking Connected
+        // during a burn therefore left that tower's solenoid latched open with
+        // nothing left to close it. Close it explicitly before skipping.
+        dmxValveWrite(towerValveChannel(i), false);
+        continue;
+      }
 
       // Theme renderer owns the per-frame colour + uplight white in every state,
       // for the strips (r/g/b) and the uplight (ur/ug/ub) alike. The fire look
@@ -226,7 +233,7 @@ void loop() {
         // uplight stays lit for the whole burn even in MACHINE_GUN mode — only
         // the valve pulses, because strobing the uplight at the burst rate reads
         // as a fault and is a photosensitivity hazard.
-        state.fire = mgOn ? towerConfigs[i].flameLevel : 0;
+        state.fireOpen = mgOn && towerConfigs[i].fireEnabled;
         applyFireLook(state);
       } else if (fsmState == FSM_END_CUE && buttonConfig.endCueMs > 0) {
         // White flash fade on the uplight white channel (not the valve), scaled
@@ -242,7 +249,7 @@ void loop() {
       // Purge wins over the FSM: hold this tower's accumulator valve fully open
       // and light its uplight, so an open valve is never visually silent.
       if (purge) {
-        state.fire = towerConfigs[i].flameLevel;
+        state.fireOpen = towerConfigs[i].fireEnabled;
         applyFireLook(state);
       }
 
@@ -250,16 +257,26 @@ void loop() {
     }
 
     if (confluenceConfig.connected) {
-      uint8_t cfLevel = 0;
+      // Open or shut, never a level — the solenoid has no third position.
+      // fireEnabled gates every source alike, so switching it off isolates the
+      // central valve from the button, purge and Morse in one place.
+      bool cfOpen = false;
       if (purge) {
-        cfLevel = confluenceConfig.fireLevel;
+        cfOpen = confluenceConfig.fireEnabled;
       } else if (morseActive()) {
-        cfLevel = morseTick();
+        // morseTick() must run even when fire is disabled: it advances playback,
+        // so short-circuiting it would freeze the message at its first unit.
+        bool unitOn = morseTick();
+        cfOpen = unitOn && confluenceConfig.fireEnabled;
       } else if (firing) {
         // Same mgOn gate as the tower valves above, so all five fire together.
-        cfLevel = mgOn ? confluenceConfig.fireLevel : 0;
+        cfOpen = mgOn && confluenceConfig.fireEnabled;
       }
-      confluenceWrite(cfLevel);
+      confluenceWrite(cfOpen);
+    } else {
+      // Same latch hazard as a disconnected tower: an unwritten CH1 holds its
+      // last byte, so disconnecting mid-burn would strand the valve open.
+      confluenceWrite(false);
     }
 
     // Log the VALVE channels on every state or purge change.

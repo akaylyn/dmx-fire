@@ -261,7 +261,19 @@ const rxTs = () => { const d = new Date(); return d.toLocaleTimeString('en-US',{
 
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const setCh = (ch, v) => { if (ch>=1 && ch<=512) dmx[ch-1] = v & 0xFF; };
+// This tool drives the real solenoids over the Enttec, so it enforces the same
+// rule the firmware does: a valve channel carries 0 or 255 and nothing else.
+// Mirrors the guard in dmxShadowWrite() — see docs/spec-solenoid-binary.md.
+// Refuses rather than clamps: guessing which way to round is guessing about propane.
+const setCh = (ch, v) => {
+  if (ch < 1 || ch > 512) return;
+  v = v & 0xFF;
+  if (VALVE_CHANNELS.includes(ch) && v !== 0 && v !== FULL) {
+    console.warn('refused ' + v + ' on valve CH' + ch + ' — valves are 0 or 255 only');
+    return;
+  }
+  dmx[ch-1] = v;
+};
 const clearAll = () => dmx.fill(0);
 
 async function flush() { if (connected && !rxOn) await iface.sendFrame(dmx); }
